@@ -1,0 +1,26 @@
+ol_dsn_netlist: "./framework/netlist/two_stage_full/two_stage_ol.cir"
+cm_dsn_netlist: "./framework/netlist/two_stage_full/two_stage_cm.cir"
+ps_dsn_netlist: "./framework/netlist/two_stage_full/two_stage_ps.cir"
+tran_dsn_netlist: "./framework/netlist/two_stage_full/two_stage_tran.cir"
+num_process: 1
+wrapper_name: "TwoStageComplete"
+target_specs:
+  gain_min: !!float 300
+  ugbw_min: !!float 10e6
+  phm_min:  !!float 60
+  tset_max: !!float 90e-9
+  feedback_factor: !!float 1.0
+  tot_err:  !!float 0.01
+  psrr_min: 50 #db
+  cmrr_min: 50 #db
+  offset_sys_max: !!float 1e-6 #1 mv as the systematic offset
+  bias_max: !!float 10e-3
+
+params:
+  mp1:  !!python/tuple [1, 100, 1]
+  mn1:  !!python/tuple [1, 100, 1]
+  mp3:  !!python/tuple [1, 100, 1]
+  mn3:  !!python/tuple [1, 100, 1]
+  mn4:  !!python/tuple [1, 100, 1]
+  mn5:  !!python/tuple [1, 100, 1]
+  cc:   !!python/tuple [!!float 0.1e-12, !!float 10.0e-12, !!float 0.1e-12]

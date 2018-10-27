@@ -1,0 +1,13 @@
+# Cs amp yaml file
+
+dsn_netlist: "/home/ksettaluri6/ckt_design_automation/framework/netlist/cs_amp.cir"
+num_process: 1
+
+target_specs:
+  ugbw_arr: !!python/tuple [!!float 1.0e6, !!float 1.0e7, !!float 1.0e8, !!float 1.0e9]
+  gain_arr: !!python/tuple [150, 100, 50, 3]
+  ibias_arr: !!python/tuple [1.0e-5, 1.0e-4, 1.0e-3, 1.0e-2]
+
+params:
+  rload: !!python/tuple [10.0, !!float 5.0e3, 20]
+  mul:   !!python/tuple [1, 100, 1]

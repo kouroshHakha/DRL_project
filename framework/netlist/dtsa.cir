@@ -1,0 +1,60 @@
+Double Tail Sense Amplifier test
+
+.include "/Users/kourosh_hakhamaneshi/Google Drive/Workspace/design_automation_workspace/spice_models/45nm_bulk.txt"
+
+
+.param w1=0.5u l1=90n m1=10
+.param w2=0.5u l2=90n m2=20
+.param w3=0.5u l3=90n m3=30
+.param w4=0.5u l4=90n m4=2
+.param w5=0.5u l5=90n m5=2
+.param w6=0.5u l6=90n m6=2
+.param w7=0.5u l7=90n m7=4
+
+.param vdd=1.2
+.param td=0 tr=10p tf=10p
+.param vcm=vdd/2
+.param Tper=2000p
+.param cff=5f
+.param vi_init=vdd/2
+.param vi_final=10m
+
+
+mn1 5   2   4   0   nmos w=w1 l=l1 m=m1
+mn2 6   3   4   0   nmos w=w1 l=l1 m=m1
+mp1 5   clk 1   1   pmos w=w2 l=l2 m=m2
+mp2 6   clk 1   1   pmos w=w2 l=l2 m=m2
+mn3 4   clk 0   0   nmos w=w3 l=l3 m=m3
+mn4 7   5   0   0   nmos w=w4 l=l4 m=m4
+mn5 8   6   0   0   nmos w=w4 l=l4 m=m4
+mn6 7   8   0   0   nmos w=w5 l=l5 m=m5
+mn7 8   7   0   0   nmos w=w5 l=l5 m=m5
+mp4 7   8   1   1   pmos w=w6 l=l6 m=m6
+mp5 8   7   1   1   pmos w=w6 l=l6 m=m6
+mp3 9   clkb    1   1   pmos w=w7 l=l7 m=m7
+
+cff1    8   0   cff
+cff2    7   0   cff
+
+vclk    clk     0   PULSE(0 1.2 td tr tf {Tper/2} Tper)
+vclkb   clkb    0   PULSE(1.2 0 td tr tf {Tper/2} Tper)
+
+eip 2   cm  in  0   0.5
+ein 3   cm  in  0   -0.5
+
+vcm cm  0   vcm
+vin in  0   pwl(0 {vi_init} {4*Tper+td} {vi_init} {4*Tper+td+tf} {-vi_final})
+
+vdd 1   0   dc=1.2
+
+.tran 10p {10*Tper}
+
+.control
+run
+set units=degrees
+set wr_vecnames
+option numdgt=7
+wrdata tran.csv {v(7)-v(8)} {v(2)-v(3)} i(vdd)
+.endc
+
+.end

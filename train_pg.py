@@ -59,7 +59,7 @@ class Agent(object):
         sy_ob = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ob_dim])
         sy_ac = tf.placeholder(dtype=tf.float32, shape=[None, None,  self.ac_dim])
         sy_ac_prev = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ac_dim])
-        sy_adv = tf.placeholder(dtype=tf.float32, shape=[None, None])
+        sy_adv = tf.placeholder(dtype=tf.float32, shape=[None, ])
         sy_golden_ob = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ob_dim])
 
         return sy_ob, sy_ac, sy_ac_prev, sy_adv, sy_golden_ob
@@ -76,8 +76,8 @@ class Agent(object):
         """
         sy_ob_in = tf.reshape(sy_ob, [self.mini_batch_size * self.roll_out_h, self.ob_dim])
         sy_ac_prev_in = tf.reshape(sy_ac_prev, [self.mini_batch_size * self.roll_out_h, self.ac_dim])
-        sy_golden_ob_in = tf.concat([sy_golden_ob for _ in range(self.roll_out_h)], axis=1)
         sy_golden_ob_in = tf.reshape(sy_golden_ob, [self.mini_batch_size * self.roll_out_h, self.ob_dim])
+        # sy_golden_ob_in = tf.concat([sy_golden_ob for _ in range(self.roll_out_h)], axis=1)
 
         layer_ob = FCLayer(self.ob_dim, self.state_dim, activation='relu', name='ob_fc')
         layer_ac_prev = FCLayer(self.ac_dim, self.state_dim, activation='relu', name='ac_prev_fc')
@@ -101,6 +101,9 @@ class Agent(object):
 
         sy_ac_mean = layer_mean(fc_out_in)
         sy_ac_logstd = layer_std(fc_out_in)
+
+        # sy_ac_mean = tf.reshape(sy_ac_mean, [self.mini_batch_size, self.roll_out_h, self.ac_dim])
+        # sy_ac_logstd = tf.reshape(sy_ac_logstd, [self.mini_batch_size, self.roll_out_h, self.ac_dim])
 
         return sy_ac_mean, sy_ac_logstd
 
@@ -141,6 +144,7 @@ class Agent(object):
         self.sy_logprob = self._get_log_prob(self.policy_parameters, self.sy_ac)
 
         print_debug("log_prob", self.sy_logprob)
+        print_debug("sy_adv", self.sy_adv)
 
         self.loss = -tf.reduce_mean(tf.multiply(self.sy_logprob, self.sy_adv))
 
@@ -153,7 +157,6 @@ class Agent(object):
 
 
         self.sy_sampled_ac = self._sample_action(self.policy_parameters)
-
 
     def sample_trajectories(self):
         # Collect paths until we have enough timesteps
@@ -322,8 +325,6 @@ class Agent(object):
                 batch_golden_obs.append(golden_obs)
                 batch_rewards.append(rews)
                 random_paths.append(path)
-
-            self.lstm_core.clear(self.sess)
 
             ph_ob = np.array(batch_obs)
             ph_golden_ob = np.array(batch_golden_obs)

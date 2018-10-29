@@ -11,7 +11,8 @@ import time
 from util import *
 import logz
 import time
-import IPython
+# import IPython
+
 def pathlength(path):
     return len(path["reward"])
 
@@ -57,10 +58,10 @@ class Agent(object):
         """
 
         sy_ob = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ob_dim])
+        sy_golden_ob = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ob_dim])
         sy_ac = tf.placeholder(dtype=tf.float32, shape=[None, None,  self.ac_dim])
         sy_ac_prev = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ac_dim])
         sy_adv = tf.placeholder(dtype=tf.float32, shape=[None, ])
-        sy_golden_ob = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ob_dim])
 
         return sy_ob, sy_ac, sy_ac_prev, sy_adv, sy_golden_ob
 
@@ -74,9 +75,19 @@ class Agent(object):
             sy_ac_mean: [None, self.ac_dim] -> [self.mini_batch_size * self.roll_out_h, self.ac_dim]
             sy_ac_logstd: [None, self.ac_dim] -> [self.mini_batch_size * self.roll_out_h, self.ac_dim]
         """
-        sy_ob_in = tf.reshape(sy_ob, [self.mini_batch_size * self.roll_out_h, self.ob_dim])
-        sy_ac_prev_in = tf.reshape(sy_ac_prev, [self.mini_batch_size * self.roll_out_h, self.ac_dim])
-        sy_golden_ob_in = tf.reshape(sy_golden_ob, [self.mini_batch_size * self.roll_out_h, self.ob_dim])
+
+        input_shape_tensor = tf.shape(sy_ob)
+        num_samples_in_batch = input_shape_tensor[0]
+        num_time_steps = input_shape_tensor[1]
+        # input_reshape_layer = Reshape(lambda shape_list: (shape_list[0]*shape_list[1], shape_list[2]))
+        # sy_ob_in = input_reshape_layer(sy_ob) #tf.reshape(sy_ob, [self.mini_batch_size * self.roll_out_h, self.ob_dim])
+        # sy_ac_prev_in = input_reshape_layer(sy_ac_prev) #tf.reshape(sy_ac_prev, [self.mini_batch_size * self.roll_out_h, self.ac_dim])
+        # sy_golden_ob_in = input_reshape_layer(sy_golden_ob) #tf.reshape(sy_golden_ob, [self.mini_batch_size * self.roll_out_h, self.ob_dim])
+        sy_ob_in = tf.reshape(sy_ob, [num_samples_in_batch * num_time_steps, self.ob_dim])
+        sy_ac_prev_in = tf.reshape(sy_ac_prev, [num_samples_in_batch * num_time_steps, self.ac_dim])
+        sy_golden_ob_in = tf.reshape(sy_golden_ob, [num_samples_in_batch * num_time_steps, self.ob_dim])
+
+
         # sy_golden_ob_in = tf.concat([sy_golden_ob for _ in range(self.roll_out_h)], axis=1)
 
         layer_ob = FCLayer(self.ob_dim, self.state_dim, activation='relu', name='ob_fc')
@@ -89,12 +100,26 @@ class Agent(object):
 
         layer_state = FCLayer(3*self.state_dim, self.state_dim, activation='relu', name='state_fc')
 
-        state_lstm_in = tf.reshape(layer_state(state_layer_in), [self.mini_batch_size, self.roll_out_h, self.state_dim])
-        state_lstm_in = tf.unstack(state_lstm_in, axis=1, num=self.roll_out_h)
+        state_lstm_in = tf.reshape(layer_state(state_layer_in), [num_samples_in_batch, num_time_steps, self.state_dim])
+
+        t = tf.constant(0, dtype=tf.int32)
+        X = []
+        def body(time, lstm_in, batch_size, time_steps):
+            X.append(lstm_in[:, time, :])
+            return time + 1, lstm_in, batch_size, time_steps
+
+        _, state_lstm_in, _, _ = tf.while_loop(cond= lambda t, *_: t < num_time_steps,
+                                               body= body,
+                                               loop_vars=(t, state_lstm_in, num_samples_in_batch, num_time_steps),
+                                               parallel_iterations=32,
+                                               swap_memory=True)
+
+        print(type(X))
+        # state_lstm_in = tf.unstack(state_lstm_in, axis=1, num=)
 
         self.lstm_core = LSTMCell(self.state_dim, self.hist_dim, minibatch_size=self.mini_batch_size)
 
-        fc_out_in = tf.reshape(self.lstm_core(state_lstm_in), [self.mini_batch_size*self.roll_out_h, self.hist_dim])
+        fc_out_in = tf.reshape(self.lstm_core(X), [self.mini_batch_size*self.roll_out_h, self.hist_dim])
 
         layer_mean = FCLayer(self.hist_dim, self.ac_dim, activation='relu', name='out_fc')
         layer_std = FCLayer(self.hist_dim, self.ac_dim, activation='relu', name='out_fc')
@@ -180,11 +205,11 @@ class Agent(object):
             golden_obs.append(golden_ob)
             ac_prevs.append(ac_prev)
 
-            ob = np.reshape(ob, newshape=tuple([1, 1]+[self.ob_dim]))
-            golden_ob = np.reshape(golden_ob, newshape=tuple([1,1,self.ob_dim]))
+            ob = np.reshape(ob, newshape=tuple([1, 1, self.ob_dim]))
+            golden_ob = np.reshape(golden_ob, newshape=tuple([1, 1 , self.ob_dim]))
             ac_prev = np.reshape(ac_prev, newshape=([1,1,self.ac_dim]))
 
-            IPython.embed()
+            # IPython.embed()
             ac = self.sess.run(self.sy_sampled_ac, feed_dict={self.sy_ob: ob,
                                                               self.sy_golden_ob: golden_ob,
                                                               self.sy_ac_prev: ac_prev})

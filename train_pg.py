@@ -224,13 +224,13 @@ class Agent(object):
                     new_rew = reward_path[t:]
                     new_gamma = gamma_array[0:len(new_rew)]
                     temp_arr.append(np.dot(new_rew,new_gamma))
-                q = np.append(q_n, np.array(temp_arr))
+                q = np.append(q, np.array(temp_arr))
         else:
             # if reward_to_go is *not* set the vanilla monte carlo estimate should be used which is sum of rewards
             # for all of that trajectory
             for reward_path in re:   
                 gamma_array = np.power(self.gamma, range(len(reward_path)))
-                q = np.append(q_n, np.array([np.dot(reward_path, gamma_array)]*len(reward_path)))  
+                q = np.append(q, np.array([np.dot(reward_path, gamma_array)]*len(reward_path)))
         return q
 
     def compute_advantage(self, ob, q):
@@ -248,7 +248,7 @@ class Agent(object):
         """
         if self.nn_baseline:
             b_n = np.mean(q)
-            adv = q_n - b_n 
+            adv = q - b_n
         else:
             adv = q.copy()
         return adv

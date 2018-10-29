@@ -11,7 +11,7 @@ import time
 from util import *
 import logz
 import time
-
+import IPython
 def pathlength(path):
     return len(path["reward"])
 
@@ -180,10 +180,11 @@ class Agent(object):
             golden_obs.append(golden_ob)
             ac_prevs.append(ac_prev)
 
-            ob = np.reshape(ob, newshape=tuple([1, 1]+self.ob_dim))
-            golden_ob = np.reshape(golden_ob, newshape=tuple([1,self.ob_dim]))
-            ac_prev = np.reshape(ac_prev, newshape=([1,self.ob_dim]))
+            ob = np.reshape(ob, newshape=tuple([1, 1]+[self.ob_dim]))
+            golden_ob = np.reshape(golden_ob, newshape=tuple([1,1,self.ob_dim]))
+            ac_prev = np.reshape(ac_prev, newshape=([1,1,self.ac_dim]))
 
+            IPython.embed()
             ac = self.sess.run(self.sy_sampled_ac, feed_dict={self.sy_ob: ob,
                                                               self.sy_golden_ob: golden_ob,
                                                               self.sy_ac_prev: ac_prev})
@@ -211,14 +212,25 @@ class Agent(object):
         :param re: shape: [self.mini_batch_size, self.roll_out_h, 1]
         :return: q: shape: [self.mini_batch_size, self.roll_out_h, 1]
         """
+        q = np.array([])
+        re = np.reshape((self.mini_batch_size, self.roll_out_h))
         if self.reward_to_go:
             # if reward_to_go is set the sum of all future rewards should be returned
-            q = None
+            #check that its getting correct values to iterate through
+            for reward_path in re:
+                gamma_array = np.power(self.gamma, range(len(reward_path)))
+                temp_arr = []
+                for t in range(len(reward_path)):
+                    new_rew = reward_path[t:]
+                    new_gamma = gamma_array[0:len(new_rew)]
+                    temp_arr.append(np.dot(new_rew,new_gamma))
+                q = np.append(q_n, np.array(temp_arr))
         else:
             # if reward_to_go is *not* set the vanilla monte carlo estimate should be used which is sum of rewards
             # for all of that trajectory
-            q = None
-        raise NotImplementedError
+            for reward_path in re:   
+                gamma_array = np.power(self.gamma, range(len(reward_path)))
+                q = np.append(q_n, np.array([np.dot(reward_path, gamma_array)]*len(reward_path)))  
         return q
 
     def compute_advantage(self, ob, q):
@@ -235,8 +247,8 @@ class Agent(object):
             adv: shape: [self.mini_batch_size, self.roll_out_h, 1]
         """
         if self.nn_baseline:
-            adv = None
-            raise NotImplementedError
+            b_n = np.mean(q)
+            adv = q_n - b_n 
         else:
             adv = q.copy()
         return adv
@@ -277,8 +289,8 @@ class Agent(object):
             estimator.
         """
 
-        if self.nn_baseline:
-            raise NotImplementedError
+        #if self.nn_baseline:
+            #raise NotImplementedError
 
         feed_dict = {
             self.sy_ob: ph_ob,
@@ -340,17 +352,17 @@ class Agent(object):
 
             # # Log diagnostics
             # KEERTANA
-            # returns = [path["reward"].sum() for path in paths]
-            # ep_lengths = [pathlength(path) for path in paths]
-            # logz.log_tabular("Time", time.time() - start)
-            # logz.log_tabular("Iteration", itr)
-            # logz.log_tabular("AverageReturn", np.mean(returns))
-            # logz.log_tabular("StdReturn", np.std(returns))
-            # logz.log_tabular("MaxReturn", np.max(returns))
-            # logz.log_tabular("MinReturn", np.min(returns))
-            # logz.log_tabular("EpLenMean", np.mean(ep_lengths))
-            # logz.log_tabular("EpLenStd", np.std(ep_lengths))
-            # logz.log_tabular("TimestepsThisBatch", timesteps_this_batch)
-            # logz.log_tabular("TimestepsSoFar", total_timesteps)
-            # logz.dump_tabular()
-            # logz.pickle_tf_vars()
+            returns = [path["reward"].sum() for path in paths]
+            ep_lengths = [pathlength(path) for path in paths]
+            logz.log_tabular("Time", time.time() - start)
+            logz.log_tabular("Iteration", itr)
+            logz.log_tabular("AverageReturn", np.mean(returns))
+            logz.log_tabular("StdReturn", np.std(returns))
+            logz.log_tabular("MaxReturn", np.max(returns))
+            logz.log_tabular("MinReturn", np.min(returns))
+            logz.log_tabular("EpLenMean", np.mean(ep_lengths))
+            logz.log_tabular("EpLenStd", np.std(ep_lengths))
+            logz.log_tabular("TimestepsThisBatch", timesteps_this_batch)
+            logz.log_tabular("TimestepsSoFar", total_timesteps)
+            logz.dump_tabular()
+            logz.pickle_tf_vars()

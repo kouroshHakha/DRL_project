@@ -1,9 +1,9 @@
 from train_pg import *
 import gym
-
-
+import gym_ckt
+import IPython
 if __name__ == '__main__':
-    env = gym.make('MountainCarContinuous-v0')
+    env = gym.make('ckt-v0')
 
     n_iter = 100
 

@@ -23,7 +23,6 @@ from gym_ckt.envs.utils import *
 class SweepCkt(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    MAX_HORIZON = 1000
     PERF_LOW = 0.0
     PERF_HIGH = 100.0e9
 
@@ -52,7 +51,6 @@ class SweepCkt(gym.Env):
         #initialize current param/spec observations
         self.cur_specs = []
         self.cur_params_idx = []
-        self.cur_step = None
 
 	#initialize sim environment
         dsn_netlist = yaml_data['dsn_netlist']
@@ -76,7 +74,6 @@ class SweepCkt(gym.Env):
         #set up current state/get specs/initialize counter
         param_val = [OrderedDict(list(zip(self.params_id,reset_vals)))]
         self.cur_specs = OrderedDict(sorted(self.sim_env.create_design_and_simulate(param_val, verbose=True)[0][1].items(), key=lambda k:k[0]))
-        self.cur_step = 0
 
         #randomly select o*
         rand_oidx = random.randint(0,len(list(self.specs.values())[0])-1)
@@ -84,7 +81,7 @@ class SweepCkt(gym.Env):
         for spec in list(self.specs.values()):
             self.specs_ideal.append(spec[rand_oidx]) 
 
-        return self._lookup() 
+        return self._lookup(), np.array(self.specs_ideal), np.array(self.cur_params_idx) 
 
     def step(self, action):
       old = self._reward()
@@ -92,9 +89,7 @@ class SweepCkt(gym.Env):
       new = self._reward()
       rew_del = rel_diff(new, old)# new-old
 
-      self.cur_step += 1
-
-      if (new > -0.05) or self.cur_step >= SweepCkt.MAX_HORIZON: 
+      if (new > -0.05): 
           done = True 
       else:
           done = False
@@ -104,7 +99,7 @@ class SweepCkt(gym.Env):
         print("Actually reached done state")
         rew_del = 1000000#_del = 10000
 
-      return np.array(obs), rew_del, done, {"reward": new}
+      return obs, rew_del, done, {"reward": new}
 
     def _lookup(self):
         '''
@@ -127,12 +122,10 @@ class SweepCkt(gym.Env):
         return reward 
 
     def _update(self, action):
-        if not self.action_space.contains(action):
-            print("[WARNING] action space violation!")
-
+        params = []
         for i,a in enumerate(action):
             self.cur_params_idx[i] = int(len(self.params[i])*a)
-            params = self.params[i][self.cur_params_idx[i]]
+            params.append(self.params[i][self.cur_params_idx[i]])
         param_val = [OrderedDict(list(zip(self.params_id,params)))]
 
         #run param vals and simulate

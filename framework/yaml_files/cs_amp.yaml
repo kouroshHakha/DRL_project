@@ -1,6 +1,6 @@
 # Cs amp yaml file
 
-dsn_netlist: "/home/ksettaluri6/ckt_design_automation/framework/netlist/cs_amp.cir"
+dsn_netlist: "/home/ksettaluri6/DRL_project/framework/netlist/cs_amp.cir"
 num_process: 1
 
 target_specs:

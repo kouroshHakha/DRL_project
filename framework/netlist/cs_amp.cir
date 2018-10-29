@@ -1,6 +1,6 @@
 cs_amp test
 
-.include "spice_models/45nm_bulk.txt"
+.include "/home/ksettaluri6/DRL_project/framework/netlist/spice_models/45nm_bulk.txt"
 
 .param  rload=500
 .param  cload=100f

@@ -100,7 +100,7 @@ class SweepCkt(gym.Env):
         print("Actually reached done state")
         rew_del = 1000000#_del = 10000
 
-      return obs, rew, done, {"reward": new}
+      return obs, new, done, {"reward": new}
 
     def _lookup(self):
         '''

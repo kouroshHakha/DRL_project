@@ -83,7 +83,7 @@ class SweepCkt(gym.Env):
         for spec in list(self.specs.values()):
             self.specs_ideal.append(spec[rand_oidx]) 
 
-        return self._lookup(), np.array(self.specs_ideal), np.array(self.cur_params_idx) 
+        return np.array(list(self.cur_specs.values())), np.array(self.specs_ideal), np.array(self.cur_params_idx) 
 
     def step(self, action):
       old = self._reward()

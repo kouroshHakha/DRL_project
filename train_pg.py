@@ -57,13 +57,15 @@ class Agent(object):
         :return:
         """
 
-        sy_ob = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ob_dim])
-        sy_golden_ob = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ob_dim])
-        sy_ac = tf.placeholder(dtype=tf.float32, shape=[None, None,  self.ac_dim])
-        sy_ac_prev = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ac_dim])
-        sy_adv = tf.placeholder(dtype=tf.float32, shape=[None, ])
+        self.sy_ob = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ob_dim])
+        self.sy_golden_ob = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ob_dim])
+        self.sy_ac = tf.placeholder(dtype=tf.float32, shape=[None, None,  self.ac_dim])
+        self.sy_ac_prev = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ac_dim])
+        self.sy_adv = tf.placeholder(dtype=tf.float32, shape=[None, ])
+        self.sy_seq_len = tf.placeholder(dtype=tf.int32, shape=[None,])
+        self.sy_init_history = tf.placeholder(dtype=tf.float32, shape=[None, self.hist_dim*2])
+        print('[db] history', self.sy_init_history)
 
-        return sy_ob, sy_ac, sy_ac_prev, sy_adv, sy_golden_ob
 
     def _policy_forward_pass(self, sy_ob, sy_ac_prev, sy_golden_ob):
         """
@@ -79,13 +81,9 @@ class Agent(object):
         input_shape_tensor = tf.shape(sy_ob)
         num_samples_in_batch = input_shape_tensor[0]
         num_time_steps = input_shape_tensor[1]
-        # input_reshape_layer = Reshape(lambda shape_list: (shape_list[0]*shape_list[1], shape_list[2]))
-        # sy_ob_in = input_reshape_layer(sy_ob) #tf.reshape(sy_ob, [self.mini_batch_size * self.roll_out_h, self.ob_dim])
-        # sy_ac_prev_in = input_reshape_layer(sy_ac_prev) #tf.reshape(sy_ac_prev, [self.mini_batch_size * self.roll_out_h, self.ac_dim])
-        # sy_golden_ob_in = input_reshape_layer(sy_golden_ob) #tf.reshape(sy_golden_ob, [self.mini_batch_size * self.roll_out_h, self.ob_dim])
-        sy_ob_in = tf.reshape(sy_ob, [num_samples_in_batch * num_time_steps, self.ob_dim])
-        sy_ac_prev_in = tf.reshape(sy_ac_prev, [num_samples_in_batch * num_time_steps, self.ac_dim])
-        sy_golden_ob_in = tf.reshape(sy_golden_ob, [num_samples_in_batch * num_time_steps, self.ob_dim])
+        sy_ob_in = tf.reshape(sy_ob, [-1, self.ob_dim])
+        sy_ac_prev_in = tf.reshape(sy_ac_prev, [-1, self.ac_dim])
+        sy_golden_ob_in = tf.reshape(sy_golden_ob, [-1, self.ob_dim])
 
 
         # sy_golden_ob_in = tf.concat([sy_golden_ob for _ in range(self.roll_out_h)], axis=1)
@@ -102,24 +100,17 @@ class Agent(object):
 
         state_lstm_in = tf.reshape(layer_state(state_layer_in), [num_samples_in_batch, num_time_steps, self.state_dim])
 
-        t = tf.constant(0, dtype=tf.int32)
-        X = []
-        def body(time, lstm_in, batch_size, time_steps):
-            X.append(lstm_in[:, time, :])
-            return time + 1, lstm_in, batch_size, time_steps
+        self.lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(self.hist_dim, state_is_tuple=False)
+        # print('[db] cell.state_size', type(self.lstm_cell.state_size))
+        # print('[db] cell.state_size=', self.lstm_cell.state_size)
+        self.lstm_out, self.lstm_history = tf.nn.dynamic_rnn(self.lstm_cell, state_lstm_in,
+                                                             sequence_length=self.sy_seq_len,
+                                                             initial_state=self.sy_init_history)
 
-        _, state_lstm_in, _, _ = tf.while_loop(cond= lambda t, *_: t < num_time_steps,
-                                               body= body,
-                                               loop_vars=(t, state_lstm_in, num_samples_in_batch, num_time_steps),
-                                               parallel_iterations=32,
-                                               swap_memory=True)
+        print('[db] next_history', self.lstm_history)
 
-        print(type(X))
-        # state_lstm_in = tf.unstack(state_lstm_in, axis=1, num=)
-
-        self.lstm_core = LSTMCell(self.state_dim, self.hist_dim, minibatch_size=self.mini_batch_size)
-
-        fc_out_in = tf.reshape(self.lstm_core(X), [self.mini_batch_size*self.roll_out_h, self.hist_dim])
+        # self.lstm_core = LSTMCell(self.state_dim, self.hist_dim, minibatch_size=self.mini_batch_size)
+        fc_out_in = tf.reshape(self.lstm_out, [-1, self.hist_dim])
 
         layer_mean = FCLayer(self.hist_dim, self.ac_dim, activation='relu', name='out_fc')
         layer_std = FCLayer(self.hist_dim, self.ac_dim, activation='relu', name='out_fc')
@@ -157,7 +148,7 @@ class Agent(object):
 
     def build_computation_graph(self):
 
-        self.sy_ob, self.sy_ac, self.sy_ac_prev, self.sy_adv, self.sy_golden_ob = self._define_placeholders()
+        self._define_placeholders()
 
         # The policy takes in observations over all time steps and produces a distribution over the action space
         # at all time steps
@@ -199,7 +190,9 @@ class Agent(object):
         ob, golden_ob, ac_prev = self.env.reset()
         obs, acs, ac_prevs, rewards, golden_obs = [], [], [], [], []
         steps = 0
-        self.lstm_core.clear(self.sess)
+        init_history = np.zeros([1, self.hist_dim*2])
+        sy_seq_len = np.array([1])
+
         while True:
             obs.append(ob)
             golden_obs.append(golden_ob)
@@ -209,15 +202,20 @@ class Agent(object):
             golden_ob = np.reshape(golden_ob, newshape=tuple([1, 1 , self.ob_dim]))
             ac_prev = np.reshape(ac_prev, newshape=([1,1,self.ac_dim]))
 
-            # IPython.embed()
-            ac = self.sess.run(self.sy_sampled_ac, feed_dict={self.sy_ob: ob,
-                                                              self.sy_golden_ob: golden_ob,
-                                                              self.sy_ac_prev: ac_prev})
+            feed_dict={
+                self.sy_ob: ob,
+                self.sy_golden_ob: golden_ob,
+                self.sy_ac_prev: ac_prev,
+                self.sy_seq_len: sy_seq_len,
+                self.sy_init_history: init_history,
+            }
+            ac, history = self.sess.run([self.sy_sampled_ac, self.lstm_history], feed_dict=feed_dict)
             ac = ac[0]
             acs.append(ac)
             ob, rew, done, info = self.env.step(ac)
             rewards.append(rew)
             ac_prev = ac
+            init_history = history
             steps += 1
             if done or steps > self.max_path_length:
                 break
@@ -298,7 +296,7 @@ class Agent(object):
 
         return q, adv
 
-    def update_parameters(self, ph_ob, ph_golden_ob, ph_ac, ph_ac_prev, q_n, adv_n):
+    def update_parameters(self, ph_ob, ph_golden_ob, ph_ac, ph_ac_prev, q, adv):
         """
         KEERTANA
         Update the parameters of the policy and (possibly) the neural network baseline,
@@ -307,8 +305,8 @@ class Agent(object):
         :param ph_golden_ob: shape: [self.mini_batch_size, self.roll_out_h, self.ob_dim]
         :param ph_ac: shape: [self.mini_batch_size, self.roll_out_h, self.ac_dim]
         :param ph_ac_prev: shape: [self.mini_batch_size, self.roll_out_h, self.ac_dim]
-        :param q_n: shape: [self.mini_batch_size, self.roll_out_h, 1]
-        :param adv_n: shape: [self.mini_batch_size, self.roll_out_h, 1]
+        :param q: shape: [self.mini_batch_size, self.roll_out_h, 1]
+        :param adv: shape: [self.mini_batch_size, self.roll_out_h, 1]
         :return:
             Nothing, just performs one step of gradient update on parameters of  policy and (possibly) value function
             estimator.
@@ -316,13 +314,17 @@ class Agent(object):
 
         #if self.nn_baseline:
             #raise NotImplementedError
+        sy_init_history = np.zeros([self.mini_batch_size, self.hist_dim*2], dtype=tf.float32)
+        sy_seq_len = np.zeros([self.mini_batch_size, ], dtype=tf.int32)
 
         feed_dict = {
             self.sy_ob: ph_ob,
             self.sy_golden_ob: ph_golden_ob,
             self.sy_ac: ph_ac,
             self.sy_ac_prev: ph_ac_prev,
-            self.sy_adv: adv_n
+            self.sy_adv: adv,
+            self.sy_seq_len: sy_seq_len,
+            self.sy_init_history: sy_init_history,
         }
         # l, = self.sess.run([self.loss], feed_dict=feed_dict)
         # print("[Debug_training] l- {}".format(l))

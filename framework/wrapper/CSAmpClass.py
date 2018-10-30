@@ -68,7 +68,9 @@ class CSAmpClass(NgSpiceWrapper):
 
     def find_ugbw(self, freq, vout):
         gain = np.abs(vout)
-        return self._get_best_crossing(freq, gain, val=1)
+        if gain[0] > 1:
+            return self._get_best_crossing(freq, gain, val=1)
+        else: return 0
 
     def find_phm(self, freq, vout):
         gain = np.abs(vout)

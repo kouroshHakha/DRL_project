@@ -68,9 +68,11 @@ class SweepCkt(gym.Env):
         reset_vals = []
         for j in range(len(self.params)):
             idx = random.randint(0,len(self.params[j])-1)
-            self.cur_params_idx.append(idx)
+            self.cur_params_idx.append(idx/(len(self.params[j])-1))
             reset_vals.append(self.params[j][idx])
-        
+
+        #normalize between 0 and 1
+         
         #set up current state/get specs/initialize counter
         param_val = [OrderedDict(list(zip(self.params_id,reset_vals)))]
         self.cur_specs = OrderedDict(sorted(self.sim_env.create_design_and_simulate(param_val, verbose=True)[0][1].items(), key=lambda k:k[0]))
@@ -87,7 +89,6 @@ class SweepCkt(gym.Env):
       old = self._reward()
       obs = self._update(action)
       new = self._reward()
-      rew_del = rel_diff(new, old)# new-old
 
       if (new > -0.05): 
           done = True 
@@ -99,7 +100,7 @@ class SweepCkt(gym.Env):
         print("Actually reached done state")
         rew_del = 1000000#_del = 10000
 
-      return obs, rew_del, done, {"reward": new}
+      return obs, rew, done, {"reward": new}
 
     def _lookup(self):
         '''
@@ -135,7 +136,7 @@ class SweepCkt(gym.Env):
         #run param vals and simulate
         self.cur_specs = OrderedDict(sorted(self.sim_env.create_design_and_simulate(param_val, verbose=True)[0][1].items(), key=lambda k:k[0]))
 
-        return np.array(self._lookup()) 
+        return np.array(list(self.cur_specs.values()))#np.array(self._lookup()) 
      
     # additional/non-standard methods
     def configure(self, d):

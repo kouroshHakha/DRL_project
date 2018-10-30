@@ -117,7 +117,6 @@ class SweepCkt(gym.Env):
         '''
         rel_specs = self._lookup()
         reward = 0.0
-        IPython.embed()
         for i,rel_spec in enumerate(rel_specs):
             if(list(self.cur_specs.keys())[i] == 'ibias'):
                 rel_spec = rel_spec*-1.0

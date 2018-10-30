@@ -28,7 +28,7 @@ if __name__ == '__main__':
     if not(os.path.exists(logdir)):
         os.makedirs(logdir)
 
-    env = gym.make('ckt-v0')
+    env = gym.make(args.env_name)
 
     n_iter = 100
 

@@ -14,7 +14,7 @@ debug = False
 
 class NgSpiceWrapper(object):
 
-    BASE_TMP_DIR = os.path.abspath("/tmp/circuit_drl")
+    BASE_TMP_DIR = os.path.abspath("/tmp/"+os.environ['USER']+"/circuit_drl")
 
     def __init__(self, design_netlist):
 

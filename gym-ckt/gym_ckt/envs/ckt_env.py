@@ -124,7 +124,11 @@ class SweepCkt(gym.Env):
     def _update(self, action):
         params = []
         for i,a in enumerate(action):
-            self.cur_params_idx[i] = int(len(self.params[i])*a)
+            if a > 1:
+                a = 1.0
+            elif a < 0:
+                a = 0.0
+            self.cur_params_idx[i] = int((len(self.params[i])-1)*a)
             params.append(self.params[i][self.cur_params_idx[i]])
         param_val = [OrderedDict(list(zip(self.params_id,params)))]
 

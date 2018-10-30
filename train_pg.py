@@ -212,6 +212,7 @@ class Agent(object):
             ac, history = self.sess.run([self.sy_sampled_ac, self.lstm_history], feed_dict=feed_dict)
             ac = ac[0]
             acs.append(ac)
+            print(ac)
             ob, rew, done, info = self.env.step(ac)
             rewards.append(rew)
             ac_prev = ac

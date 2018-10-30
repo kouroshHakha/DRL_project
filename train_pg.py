@@ -11,10 +11,21 @@ import time
 from util import *
 import logz
 import time
-# import IPython
+import IPython
 
 def pathlength(path):
-    return len(path["reward"])
+    return len(path["rew"])
+
+def setup_logger(logdir, locals_):
+    # Configure output directory for logging
+    logz.configure_output_dir(logdir)
+    # Log experimental parameters
+    args = inspect.getargspec(Agent.train)[0]
+    params = []
+    for k in args:
+        if (k in locals_) and (k != 'self'):
+            params.append(locals_[k])
+    logz.save_params(params)
 
 class Agent(object):
     def __init__(self,
@@ -187,7 +198,7 @@ class Agent(object):
         return paths, timesteps_this_batch
 
     def sample_trajectory(self):
-        ob, golden_ob, ac_prev = self.env.reset()
+        ob, golden_obs_org, ac_prev = self.env.reset()
         obs, acs, ac_prevs, rewards, golden_obs = [], [], [], [], []
         steps = 0
         init_history = np.zeros([1, self.hist_dim*2])
@@ -195,11 +206,11 @@ class Agent(object):
 
         while True:
             obs.append(ob)
-            golden_obs.append(golden_ob)
             ac_prevs.append(ac_prev)
 
             ob = np.reshape(ob, newshape=tuple([1, 1, self.ob_dim]))
-            golden_ob = np.reshape(golden_ob, newshape=tuple([1, 1 , self.ob_dim]))
+            golden_ob = np.reshape(golden_obs_org, newshape=tuple([1, 1 , self.ob_dim]))
+            golden_obs.append(golden_obs_org)
             ac_prev = np.reshape(ac_prev, newshape=([1,1,self.ac_dim]))
 
             feed_dict={
@@ -224,7 +235,7 @@ class Agent(object):
                 "rew" : np.array(rewards, dtype=np.float32),
                 "ac" : np.array(acs, dtype=np.float32),
                 "prev_ac" : np.array(ac_prevs, dtype=np.float32),
-                "golden_obs" : np.array(golden_obs, dtype=np.float32),}
+                "golden_obs" : np.array(golden_obs, dtype=np.float32)}
         return path
 
     def sum_of_rewards(self, re):
@@ -237,7 +248,7 @@ class Agent(object):
         :return: q: shape: [self.mini_batch_size, self.roll_out_h, 1]
         """
         q = np.array([])
-        re = np.reshape((self.mini_batch_size, self.roll_out_h))
+        re = np.reshape(re, (self.mini_batch_size, self.roll_out_h))
         if self.reward_to_go:
             # if reward_to_go is set the sum of all future rewards should be returned
             #check that its getting correct values to iterate through
@@ -315,8 +326,8 @@ class Agent(object):
 
         #if self.nn_baseline:
             #raise NotImplementedError
-        sy_init_history = np.zeros([self.mini_batch_size, self.hist_dim*2], dtype=tf.float32)
-        sy_seq_len = np.zeros([self.mini_batch_size, ], dtype=tf.int32)
+        sy_init_history = np.zeros([self.mini_batch_size, self.hist_dim*2], dtype=np.float32)
+        sy_seq_len = np.zeros([self.mini_batch_size, ], dtype=np.int32)
 
         feed_dict = {
             self.sy_ob: ph_ob,
@@ -333,9 +344,11 @@ class Agent(object):
         # l, = self.sess.run([self.loss], feed_dict=feed_dict)
         # print("[Debug_training] l+ {}".format(l))
 
-    def train(self, n_iter):
+    def train(self, n_iter, logdir):
         total_timesteps = 0
         start = time.time()
+
+        setup_logger(logdir, locals())
 
         for itr in range(n_iter):
             print("********** Iteration %i ************"%itr)
@@ -352,16 +365,17 @@ class Agent(object):
                 # 0:random_transitions_space is the range from which a random transition
                 # can be picked up while having unrollings_num - 1 transitions after it
                 random_transitions_space = pathlength(path) - self.roll_out_h
-                random_start = np.random.choice(random_transitions_space, 1)
+                random_start, = np.random.choice(random_transitions_space, 1)
 
                 obs = path['obs'][random_start:random_start + self.roll_out_h]
-                acs = path['acs'][random_start:random_start + self.roll_out_h]
+                acs = path['ac'][random_start:random_start + self.roll_out_h]
                 ac_prevs = path['prev_ac'][random_start:random_start + self.roll_out_h]
                 golden_obs = path['golden_obs'][random_start:random_start + self.roll_out_h]
                 rews = path['rew'][random_start:random_start + self.roll_out_h]
 
                 batch_obs.append(obs)
                 batch_acs.append(acs)
+                batch_ac_prevs.append(ac_prevs)
                 batch_golden_obs.append(golden_obs)
                 batch_rewards.append(rews)
                 random_paths.append(path)
@@ -380,7 +394,7 @@ class Agent(object):
 
             # # Log diagnostics
             # KEERTANA
-            returns = [path["reward"].sum() for path in paths]
+            returns = [path["rew"].sum() for path in paths]
             ep_lengths = [pathlength(path) for path in paths]
             logz.log_tabular("Time", time.time() - start)
             logz.log_tabular("Iteration", itr)

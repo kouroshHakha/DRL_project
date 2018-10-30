@@ -98,7 +98,7 @@ class SweepCkt(gym.Env):
       #incentivize reaching goal state
       if (new > -0.05):
         print("GOAL MET")
-        new = 1000000
+        new = 10
 
       return obs, new, done, {"reward": new}
 

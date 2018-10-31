@@ -49,11 +49,15 @@ class Agent(object):
 
         self.min_timesteps_per_batch = 1000
         self.max_path_length = 100
+        self.num_updates_per_iter = 5
 
         self.gamma = pg_flavor_args['gamma']
         self.reward_to_go = pg_flavor_args['reward_to_go']
         self.nn_baseline = pg_flavor_args['nn_baseline']
         self.normalize_advantages = pg_flavor_args['normalize_advantages']
+
+        np.random.seed(10)
+        tf.set_random_seed(10)
 
     def init_tf_sess(self):
         tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1)
@@ -75,7 +79,7 @@ class Agent(object):
         self.sy_adv = tf.placeholder(dtype=tf.float32, shape=[None, ])
         self.sy_seq_len = tf.placeholder(dtype=tf.int32, shape=[None,])
         self.sy_init_history = tf.placeholder(dtype=tf.float32, shape=[None, self.hist_dim*2])
-        print('[db] history', self.sy_init_history)
+        print_debug('sy_init_history', self.sy_init_history)
 
 
     def _policy_forward_pass(self, sy_ob, sy_ac_prev, sy_golden_ob):
@@ -99,17 +103,17 @@ class Agent(object):
 
         # sy_golden_ob_in = tf.concat([sy_golden_ob for _ in range(self.roll_out_h)], axis=1)
 
-        layer_ob = FCLayer(self.ob_dim, self.state_dim, activation='relu', name='ob_fc')
-        layer_ac_prev = FCLayer(self.ac_dim, self.state_dim, activation='relu', name='ac_prev_fc')
-        layer_golden_ob = FCLayer(self.ob_dim, self.state_dim, activation='relu', name='golden_ob_fc')
+        sy_ob_out = tf.layers.dense(sy_ob_in, self.state_dim, tf.nn.relu, name='ob_fc')
+        sy_ac_prev_out = tf.layers.dense(sy_ac_prev_in, self.state_dim, tf.nn.relu, name='ac_prev_fc')
+        sy_golden_ob_out = tf.layers.dense(sy_golden_ob_in, self.state_dim, tf.nn.relu, name='golden_ob_fc')
 
-        state_layer_in = tf.concat([layer_ob(sy_ob_in),
-                                    layer_ac_prev(sy_ac_prev_in),
-                                    layer_golden_ob(sy_golden_ob_in)], axis=1)
+        sy_state_layer_in = tf.concat([sy_ob_out,
+                                       sy_ac_prev_out,
+                                       sy_golden_ob_out], axis=1)
 
-        layer_state = FCLayer(3*self.state_dim, self.state_dim, activation='relu', name='state_fc')
+        sy_state_layer_out = tf.layers.dense(sy_state_layer_in, self.state_dim, tf.nn.relu, name='state_fc')
 
-        state_lstm_in = tf.reshape(layer_state(state_layer_in), [num_samples_in_batch, num_time_steps, self.state_dim])
+        state_lstm_in = tf.reshape(sy_state_layer_out, [num_samples_in_batch, num_time_steps, self.state_dim])
 
         self.lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(self.hist_dim, state_is_tuple=False)
         # print('[db] cell.state_size', type(self.lstm_cell.state_size))
@@ -118,16 +122,15 @@ class Agent(object):
                                                              sequence_length=self.sy_seq_len,
                                                              initial_state=self.sy_init_history)
 
-        print('[db] next_history', self.lstm_history)
+        print_debug('next_history', self.lstm_history)
 
-        # self.lstm_core = LSTMCell(self.state_dim, self.hist_dim, minibatch_size=self.mini_batch_size)
         fc_out_in = tf.reshape(self.lstm_out, [-1, self.hist_dim])
 
         layer_mean = FCLayer(self.hist_dim, self.ac_dim, activation='relu', name='out_fc')
         layer_std = FCLayer(self.hist_dim, self.ac_dim, activation='relu', name='out_fc')
 
-        sy_ac_mean = layer_mean(fc_out_in)
-        sy_ac_logstd = layer_std(fc_out_in)
+        sy_ac_mean = tf.layers.dense(fc_out_in, self.ac_dim, activation=tf.nn.sigmoid, name='out_mean_fc')
+        sy_ac_logstd = tf.layers.dense(fc_out_in, self.ac_dim, activation=tf.nn.sigmoid, name='out_std_fc')
 
         # sy_ac_mean = tf.reshape(sy_ac_mean, [self.mini_batch_size, self.roll_out_h, self.ac_dim])
         # sy_ac_logstd = tf.reshape(sy_ac_logstd, [self.mini_batch_size, self.roll_out_h, self.ac_dim])
@@ -166,6 +169,11 @@ class Agent(object):
         self.policy_parameters = self._policy_forward_pass(self.sy_ob, self.sy_ac_prev, self.sy_golden_ob)
         print_debug("policy params", self.policy_parameters)
 
+        mean, log_std = self.policy_parameters
+        self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+        self.gradients_mean = tf.gradients(mean,self.variables)
+        IPython.embed()
+
         # We can also compute the logprob of the actions that were actually taken by the policy
         # This is used in the loss function.
         self.sy_logprob = self._get_log_prob(self.policy_parameters, self.sy_ac)
@@ -175,12 +183,13 @@ class Agent(object):
 
         self.loss = -tf.reduce_mean(tf.multiply(self.sy_logprob, self.sy_adv))
 
-        gradients = self.optimizer.compute_gradients(self.loss)
-        for i, (grad, var) in enumerate(gradients):
-            if grad is not None:
-                gradients[i] = (tf.clip_by_value(grad, -1, 1), var)
-
-        self.update_params = self.optimizer.apply_gradients(gradients)
+        self.gradients = self.optimizer.compute_gradients(self.loss)
+        # for i, (grad, var) in enumerate(self.gradients):
+        #     if grad is not None:
+        #         self.gradients[i] = (tf.clip_by_value(grad, -1, 1), var)
+        #
+        self.update_params = self.optimizer.apply_gradients(self.gradients)
+        # self.update_params = self.optimizer.minimize(self.loss)
 
 
         self.sy_sampled_ac = self._sample_action(self.policy_parameters)
@@ -199,7 +208,7 @@ class Agent(object):
 
     def sample_trajectory(self):
         ob, golden_obs_org, ac_prev = self.env.reset()
-        obs, acs, ac_prevs, rewards, golden_obs = [], [], [], [], []
+        obs, next_obs, acs, ac_prevs, rewards, golden_obs = [], [], [], [], [], []
         steps = 0
         init_history = np.zeros([1, self.hist_dim*2])
         sy_seq_len = np.array([1])
@@ -209,7 +218,7 @@ class Agent(object):
             ac_prevs.append(ac_prev)
 
             ob = np.reshape(ob, newshape=tuple([1, 1, self.ob_dim]))
-            golden_ob = np.reshape(golden_obs_org, newshape=tuple([1, 1 , self.ob_dim]))
+            golden_ob = np.reshape(golden_obs_org, newshape=tuple([1, 1, self.ob_dim]))
             golden_obs.append(golden_obs_org)
             ac_prev = np.reshape(ac_prev, newshape=([1,1,self.ac_dim]))
 
@@ -223,15 +232,18 @@ class Agent(object):
             ac, history = self.sess.run([self.sy_sampled_ac, self.lstm_history], feed_dict=feed_dict)
             ac = ac[0]
             acs.append(ac)
-            print(ac)
-            ob, rew, done, info = self.env.step(ac)
+            next_ob, rew, done, info = self.env.step(ac)
             rewards.append(rew)
+            next_obs.append(next_ob)
+
             ac_prev = ac
             init_history = history
+            ob = next_ob
             steps += 1
             if done or steps > self.max_path_length:
                 break
         path = {"obs" : np.array(obs, dtype=np.float32),
+                "next_obs": np.array(next_obs, dtype=np.float32),
                 "rew" : np.array(rewards, dtype=np.float32),
                 "ac" : np.array(acs, dtype=np.float32),
                 "prev_ac" : np.array(ac_prevs, dtype=np.float32),
@@ -338,22 +350,71 @@ class Agent(object):
             self.sy_seq_len: sy_seq_len,
             self.sy_init_history: sy_init_history,
         }
-        # l, = self.sess.run([self.loss], feed_dict=feed_dict)
-        # print("[Debug_training] l- {}".format(l))
+        l, = self.sess.run([self.loss], feed_dict=feed_dict)
+
+        for grad, var in self.gradients:
+            if grad is not None:
+                grad_value = self.sess.run(grad, feed_dict=feed_dict)
+                print("var: {}".format(var.name))
+                print("-"*30)
+                print("{}".format(grad_value))
+            else:
+                print("var: {}".format(var.name))
+                print("-"*30)
+                print("grad is None")
+
+        print("[Debug_training] l- {}".format(l))
         self.sess.run([self.update_params], feed_dict=feed_dict)
-        # l, = self.sess.run([self.loss], feed_dict=feed_dict)
-        # print("[Debug_training] l+ {}".format(l))
+        l, = self.sess.run([self.loss], feed_dict=feed_dict)
+        print("[Debug_training] l+ {}".format(l))
+        IPython.embed()
+
+    def pad(self, path):
+        rem_obs_array = np.array([path['next_obs'][-1] for _ in range(self.roll_out_h - pathlength(path))])
+        rem_acs_array = np.array([path['ac'][-1] for _ in range(self.roll_out_h - pathlength(path))])
+        rem_ac_prevs_array = np.array([path['ac'][-1] for _ in range(self.roll_out_h - pathlength(path))])
+        rem_golden_obs_array = np.array([path['golden_obs'][-1] for _ in range(self.roll_out_h - pathlength(path))])
+        rem_rew_array = np.array([path['rew'][-1] for _ in range(self.roll_out_h - pathlength(path))])
+
+        obs = np.concatenate((path['obs'], rem_obs_array), axis=0)
+        acs = np.concatenate((path['ac'], rem_acs_array), axis=0)
+        ac_prevs = np.concatenate((path['prev_ac'], rem_ac_prevs_array), axis=0)
+        golden_obs = np.concatenate((path['golden_obs'], rem_golden_obs_array), axis=0)
+        rews = np.concatenate((path['rew'], rem_rew_array), axis=0)
+        print("padding happened -> path_len = {}".format(pathlength(path)))
+        return obs, acs, ac_prevs, golden_obs, rews
 
     def train(self, n_iter, logdir):
         total_timesteps = 0
         start = time.time()
+        # step_count = 0
 
         setup_logger(logdir, locals())
 
         for itr in range(n_iter):
             print("********** Iteration %i ************"%itr)
-            paths, timesteps_this_batch = self.sample_trajectories()
-            total_timesteps += timesteps_this_batch
+            if itr % self.num_updates_per_iter == 0:
+                print("// Sampling Trajectories ...")
+                paths, timesteps_this_batch = self.sample_trajectories()
+                total_timesteps += timesteps_this_batch
+
+                # # Log diagnostics
+                # KEERTANA
+                returns = [path["rew"].sum() for path in paths]
+                ep_lengths = [pathlength(path) for path in paths]
+                logz.log_tabular("Time", time.time() - start)
+                logz.log_tabular("Iteration", itr)
+                logz.log_tabular("AverageReturn", np.mean(returns))
+                logz.log_tabular("StdReturn", np.std(returns))
+                logz.log_tabular("MaxReturn", np.max(returns))
+                logz.log_tabular("MinReturn", np.min(returns))
+                logz.log_tabular("EpLenMean", np.mean(ep_lengths))
+                logz.log_tabular("EpLenStd", np.std(ep_lengths))
+                logz.log_tabular("TimestepsThisBatch", timesteps_this_batch)
+                logz.log_tabular("TimestepsSoFar", total_timesteps)
+                logz.dump_tabular()
+                logz.pickle_tf_vars()
+
 
             # sample a minibatch_size of random episode with a number of transitions >= unrollings_num
             random_path_indices = np.random.choice(len(paths), self.mini_batch_size)
@@ -365,13 +426,19 @@ class Agent(object):
                 # 0:random_transitions_space is the range from which a random transition
                 # can be picked up while having unrollings_num - 1 transitions after it
                 random_transitions_space = pathlength(path) - self.roll_out_h
-                random_start, = np.random.choice(random_transitions_space, 1)
 
-                obs = path['obs'][random_start:random_start + self.roll_out_h]
-                acs = path['ac'][random_start:random_start + self.roll_out_h]
-                ac_prevs = path['prev_ac'][random_start:random_start + self.roll_out_h]
-                golden_obs = path['golden_obs'][random_start:random_start + self.roll_out_h]
-                rews = path['rew'][random_start:random_start + self.roll_out_h]
+                if random_transitions_space < 0:
+                    obs, acs, ac_prevs, golden_obs, rews = self.pad(path)
+                else:
+                    if random_transitions_space != 0:
+                        random_start, = np.random.choice(random_transitions_space, 1)
+                    else:
+                        random_start = 0
+                    obs = path['obs'][random_start:random_start + self.roll_out_h]
+                    acs = path['ac'][random_start:random_start + self.roll_out_h]
+                    ac_prevs = path['prev_ac'][random_start:random_start + self.roll_out_h]
+                    golden_obs = path['golden_obs'][random_start:random_start + self.roll_out_h]
+                    rews = path['rew'][random_start:random_start + self.roll_out_h]
 
                 batch_obs.append(obs)
                 batch_acs.append(acs)
@@ -386,25 +453,12 @@ class Agent(object):
             ph_ac_prev = np.array(batch_ac_prevs)
             re = np.array(batch_rewards)
 
+            print("// Estimating return ...")
             q, adv = self.estimate_return(ph_ob, re)
             # just checking the shapes to make sure
-            print("[q_n] {}".format(q.shape))
-            print("[adv_n] {}".format(adv.shape))
+            # print("[q_n] {}".format(q.shape))
+            # print("[adv_n] {}".format(adv.shape))
+            print("// taking gradient step ...")
             self.update_parameters(ph_ob, ph_golden_ob, ph_ac, ph_ac_prev, q, adv)
 
-            # # Log diagnostics
-            # KEERTANA
-            returns = [path["rew"].sum() for path in paths]
-            ep_lengths = [pathlength(path) for path in paths]
-            logz.log_tabular("Time", time.time() - start)
-            logz.log_tabular("Iteration", itr)
-            logz.log_tabular("AverageReturn", np.mean(returns))
-            logz.log_tabular("StdReturn", np.std(returns))
-            logz.log_tabular("MaxReturn", np.max(returns))
-            logz.log_tabular("MinReturn", np.min(returns))
-            logz.log_tabular("EpLenMean", np.mean(ep_lengths))
-            logz.log_tabular("EpLenStd", np.std(ep_lengths))
-            logz.log_tabular("TimestepsThisBatch", timesteps_this_batch)
-            logz.log_tabular("TimestepsSoFar", total_timesteps)
-            logz.dump_tabular()
-            logz.pickle_tf_vars()
+

@@ -107,30 +107,32 @@ class Agent(object):
         sy_ac_prev_out = tf.layers.dense(sy_ac_prev_in, self.state_dim, tf.nn.relu, name='ac_prev_fc')
         sy_golden_ob_out = tf.layers.dense(sy_golden_ob_in, self.state_dim, tf.nn.relu, name='golden_ob_fc')
 
-        sy_state_layer_in = tf.concat([sy_ob_out,
+        self.sy_state_layer_in = tf.concat([sy_ob_out,
                                        sy_ac_prev_out,
                                        sy_golden_ob_out], axis=1)
 
-        sy_state_layer_out = tf.layers.dense(sy_state_layer_in, self.state_dim, tf.nn.relu, name='state_fc')
+        self.sy_state_layer_out = tf.layers.dense(self.sy_state_layer_in, self.state_dim, tf.nn.relu, name='state_fc')
 
-        state_lstm_in = tf.reshape(sy_state_layer_out, [num_samples_in_batch, num_time_steps, self.state_dim])
+        # self.state_lstm_in = tf.reshape(self.sy_state_layer_out, [num_samples_in_batch, num_time_steps, self.state_dim])
+        self.state_lstm_in = tf.placeholder(dtype=tf.float32, shape=[None, None, self.state_dim])
 
-        self.lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(self.hist_dim, state_is_tuple=False)
+        self.lstm_cell = tf.nn.rnn_cell.LSTMCell(self.hist_dim, state_is_tuple=False, name='lstm')
+
+        self.test_lstm_out = self.lstm_cell(self.state_lstm_in[:,0,:], self.sy_init_history)
         # print('[db] cell.state_size', type(self.lstm_cell.state_size))
         # print('[db] cell.state_size=', self.lstm_cell.state_size)
-        self.lstm_out, self.lstm_history = tf.nn.dynamic_rnn(self.lstm_cell, state_lstm_in,
+        self.lstm_out, self.lstm_history = tf.nn.dynamic_rnn(self.lstm_cell,
+                                                             self.state_lstm_in,
                                                              sequence_length=self.sy_seq_len,
                                                              initial_state=self.sy_init_history)
 
+
         print_debug('next_history', self.lstm_history)
 
-        fc_out_in = tf.reshape(self.lstm_out, [-1, self.hist_dim])
+        self.fc_out_in = tf.reshape(self.lstm_out, [-1, self.hist_dim])
 
-        layer_mean = FCLayer(self.hist_dim, self.ac_dim, activation='relu', name='out_fc')
-        layer_std = FCLayer(self.hist_dim, self.ac_dim, activation='relu', name='out_fc')
-
-        sy_ac_mean = tf.layers.dense(fc_out_in, self.ac_dim, activation=tf.nn.sigmoid, name='out_mean_fc')
-        sy_ac_logstd = tf.layers.dense(fc_out_in, self.ac_dim, activation=tf.nn.sigmoid, name='out_std_fc')
+        sy_ac_mean = tf.layers.dense(self.fc_out_in, self.ac_dim, activation=tf.nn.sigmoid, name='out_mean_fc')
+        sy_ac_logstd = tf.layers.dense(self.fc_out_in, self.ac_dim, activation=tf.nn.sigmoid, name='out_std_fc')
 
         # sy_ac_mean = tf.reshape(sy_ac_mean, [self.mini_batch_size, self.roll_out_h, self.ac_dim])
         # sy_ac_logstd = tf.reshape(sy_ac_logstd, [self.mini_batch_size, self.roll_out_h, self.ac_dim])
@@ -172,7 +174,6 @@ class Agent(object):
         mean, log_std = self.policy_parameters
         self.variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
         self.gradients_mean = tf.gradients(mean,self.variables)
-        IPython.embed()
 
         # We can also compute the logprob of the actions that were actually taken by the policy
         # This is used in the loss function.
@@ -229,6 +230,10 @@ class Agent(object):
                 self.sy_seq_len: sy_seq_len,
                 self.sy_init_history: init_history,
             }
+
+            feed_dict[self.state_lstm_in]= np.ones([1, 1, self.state_dim])
+
+
             ac, history = self.sess.run([self.sy_sampled_ac, self.lstm_history], feed_dict=feed_dict)
             ac = ac[0]
             acs.append(ac)
@@ -350,7 +355,14 @@ class Agent(object):
             self.sy_seq_len: sy_seq_len,
             self.sy_init_history: sy_init_history,
         }
+
+        feed_dict[self.state_lstm_in]= np.ones([self.mini_batch_size, self.roll_out_h, self.state_dim])
+        IPython.embed()
+
         l, = self.sess.run([self.loss], feed_dict=feed_dict)
+
+        test_tnsr_value = self.sess.run(self.fc_out_in, feed_dict=feed_dict)
+        print_debug("test_tnsr_value", test_tnsr_value)
 
         for grad, var in self.gradients:
             if grad is not None:
@@ -367,7 +379,6 @@ class Agent(object):
         self.sess.run([self.update_params], feed_dict=feed_dict)
         l, = self.sess.run([self.loss], feed_dict=feed_dict)
         print("[Debug_training] l+ {}".format(l))
-        IPython.embed()
 
     def pad(self, path):
         rem_obs_array = np.array([path['next_obs'][-1] for _ in range(self.roll_out_h - pathlength(path))])

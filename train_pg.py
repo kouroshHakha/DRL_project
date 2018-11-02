@@ -17,9 +17,7 @@ def pathlength(path):
     return len(path["rew"])
 
 def setup_logger(logdir, locals_):
-    # Configure output directory for logging
     logz.configure_output_dir(logdir)
-    # Log experimental parameters
     args = inspect.getargspec(Agent.train)[0]
     params = []
     for k in args:
@@ -67,11 +65,6 @@ class Agent(object):
 
     def _define_placeholders(self):
 
-        """
-
-        :return:
-        """
-
         self.sy_ob = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ob_dim])
         self.sy_golden_ob = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ob_dim])
         self.sy_ac = tf.placeholder(dtype=tf.float32, shape=[None, None,  self.ac_dim])
@@ -100,9 +93,6 @@ class Agent(object):
         sy_ac_prev_in = tf.reshape(sy_ac_prev, [-1, self.ac_dim])
         sy_golden_ob_in = tf.reshape(sy_golden_ob, [-1, self.ob_dim])
 
-
-        # sy_golden_ob_in = tf.concat([sy_golden_ob for _ in range(self.roll_out_h)], axis=1)
-
         sy_ob_out = tf.layers.dense(sy_ob_in, self.state_dim, tf.nn.relu, name='ob_fc')
         sy_ac_prev_out = tf.layers.dense(sy_ac_prev_in, self.state_dim, tf.nn.relu, name='ac_prev_fc')
         sy_golden_ob_out = tf.layers.dense(sy_golden_ob_in, self.state_dim, tf.nn.relu, name='golden_ob_fc')
@@ -112,27 +102,24 @@ class Agent(object):
                                        sy_golden_ob_out], axis=1)
 
         self.sy_state_layer_out = tf.layers.dense(self.sy_state_layer_in, self.state_dim, tf.nn.relu, name='state_fc')
+        self.state_lstm_in = tf.reshape(self.sy_state_layer_out, [num_samples_in_batch, num_time_steps, self.state_dim])
 
-        # self.state_lstm_in = tf.reshape(self.sy_state_layer_out, [num_samples_in_batch, num_time_steps, self.state_dim])
-        self.state_lstm_in = tf.placeholder(dtype=tf.float32, shape=[None, None, self.state_dim])
-
+        #Create LSTM cells of length batch_size 
         self.lstm_cell = tf.nn.rnn_cell.LSTMCell(self.hist_dim, state_is_tuple=False, name='lstm')
+        self.lstm_out = list([])
 
-        self.test_lstm_out = self.lstm_cell(self.state_lstm_in[:,0,:], self.sy_init_history)
-        # print('[db] cell.state_size', type(self.lstm_cell.state_size))
-        # print('[db] cell.state_size=', self.lstm_cell.state_size)
-        self.lstm_out, self.lstm_history = tf.nn.dynamic_rnn(self.lstm_cell,
-                                                             self.state_lstm_in,
-                                                             sequence_length=self.sy_seq_len,
-                                                             initial_state=self.sy_init_history)
-
-
-        print_debug('next_history', self.lstm_history)
+        state = self.sy_init_history
+        for i in range(self.roll_out_h):
+            out, state = self.lstm_cell(self.state_lstm_in[:,i,:], state)
+            if i == 0:
+                self.state_1 = state
+            self.lstm_out.append(out)
+        #outputs batch size,  time step, ob_dim
+        self.lstm_out = tf.transpose(tf.stack(self.lstm_out), perm=[1,0,2])
 
         self.fc_out_in = tf.reshape(self.lstm_out, [-1, self.hist_dim])
-
-        sy_ac_mean = tf.layers.dense(self.fc_out_in, self.ac_dim, activation=tf.nn.sigmoid, name='out_mean_fc')
-        sy_ac_logstd = tf.layers.dense(self.fc_out_in, self.ac_dim, activation=tf.nn.sigmoid, name='out_std_fc')
+        sy_ac_mean = tf.layers.dense(self.fc_out_in, self.ac_dim, activation=None, name='out_mean_fc')
+        sy_ac_logstd = tf.layers.dense(self.fc_out_in, self.ac_dim, activation=None, name='out_std_fc')
 
         # sy_ac_mean = tf.reshape(sy_ac_mean, [self.mini_batch_size, self.roll_out_h, self.ac_dim])
         # sy_ac_logstd = tf.reshape(sy_ac_logstd, [self.mini_batch_size, self.roll_out_h, self.ac_dim])
@@ -214,6 +201,9 @@ class Agent(object):
         init_history = np.zeros([1, self.hist_dim*2])
         sy_seq_len = np.array([1])
 
+        zero_pad_obs = np.zeros([1, self.roll_out_h-1, self.ob_dim])
+        zero_pad_ac_prev = np.zeros([1, self.roll_out_h-1, self.ac_dim])
+
         while True:
             obs.append(ob)
             ac_prevs.append(ac_prev)
@@ -224,18 +214,24 @@ class Agent(object):
             ac_prev = np.reshape(ac_prev, newshape=([1,1,self.ac_dim]))
 
             feed_dict={
-                self.sy_ob: ob,
-                self.sy_golden_ob: golden_ob,
-                self.sy_ac_prev: ac_prev,
+                self.sy_ob: np.append(ob, zero_pad_obs, axis=1),
+                self.sy_golden_ob: np.append(golden_ob, zero_pad_obs, axis=1),
+                self.sy_ac_prev: np.append(ac_prev, zero_pad_ac_prev, axis=1),
                 self.sy_seq_len: sy_seq_len,
                 self.sy_init_history: init_history,
             }
 
-            feed_dict[self.state_lstm_in]= np.ones([1, 1, self.state_dim])
+            #feed_dict[self.state_lstm_in]= np.ones([1, 1, self.state_dim])
 
-
-            ac, history = self.sess.run([self.sy_sampled_ac, self.lstm_history], feed_dict=feed_dict)
+            ac, history = self.sess.run([self.sy_sampled_ac, self.state_1], feed_dict=feed_dict)
             ac = ac[0]
+            if steps % 10 == 0:
+                mean, std = self.sess.run(self.policy_parameters, feed_dict=feed_dict)
+                print('Mean: {}'.format(mean[0]))
+                print('std: {}'.format(np.exp(std[0])))
+                print('ac: {}'.format(np.exp(ac)))
+
+                
             acs.append(ac)
             next_ob, rew, done, info = self.env.step(ac)
             rewards.append(rew)
@@ -356,24 +352,21 @@ class Agent(object):
             self.sy_init_history: sy_init_history,
         }
 
-        feed_dict[self.state_lstm_in]= np.ones([self.mini_batch_size, self.roll_out_h, self.state_dim])
-        IPython.embed()
-
         l, = self.sess.run([self.loss], feed_dict=feed_dict)
 
-        test_tnsr_value = self.sess.run(self.fc_out_in, feed_dict=feed_dict)
-        print_debug("test_tnsr_value", test_tnsr_value)
+        #test_tnsr_value = self.sess.run(self.fc_out_in, feed_dict=feed_dict)
+        #print_debug("test_tnsr_value", test_tnsr_value)
 
-        for grad, var in self.gradients:
-            if grad is not None:
-                grad_value = self.sess.run(grad, feed_dict=feed_dict)
-                print("var: {}".format(var.name))
-                print("-"*30)
-                print("{}".format(grad_value))
-            else:
-                print("var: {}".format(var.name))
-                print("-"*30)
-                print("grad is None")
+        #for grad, var in self.gradients:
+        #    if grad is not None:
+        #        grad_value = self.sess.run(grad, feed_dict=feed_dict)
+        #        print("var: {}".format(var.name))
+        #        print("-"*30)
+        #        print("{}".format(grad_value))
+        #    else:
+        #        print("var: {}".format(var.name))
+        #        print("-"*30)
+        #        print("grad is None")
 
         print("[Debug_training] l- {}".format(l))
         self.sess.run([self.update_params], feed_dict=feed_dict)

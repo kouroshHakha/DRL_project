@@ -18,16 +18,20 @@ def pathlength(path):
 
 def setup_logger(logdir, locals_):
     logz.configure_output_dir(logdir)
-    args = inspect.getargspec(Agent.train)[0]
-    params = []
-    for k in args:
-        if (k in locals_) and (k != 'self'):
-            params.append(locals_[k])
+    args = inspect.getargspec(Agent.__init__)[0]
+    # params = []
+    # for k in args:
+    #     if (k in locals_) and (k != 'self'):
+    #         params.append(locals_[k])
+    params = dict(
+        exp_name=locals_['self'].env.__class__.__name__
+    )
     logz.save_params(params)
 
 class Agent(object):
     def __init__(self,
                  env,
+                 animate,
                  computation_graph_args,
                  pg_flavor_args,
                  ):
@@ -46,16 +50,17 @@ class Agent(object):
 
 
         self.min_timesteps_per_batch = 1000
-        self.max_path_length = 100
-        self.num_updates_per_iter = 5
+        self.max_path_length = 10
+        self.num_updates_per_iter = 1
 
         self.gamma = pg_flavor_args['gamma']
         self.reward_to_go = pg_flavor_args['reward_to_go']
         self.nn_baseline = pg_flavor_args['nn_baseline']
         self.normalize_advantages = pg_flavor_args['normalize_advantages']
+        self.animate = animate
 
-        np.random.seed(10)
-        tf.set_random_seed(10)
+        np.random.seed(20)
+        tf.set_random_seed(20)
 
     def init_tf_sess(self):
         tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1)
@@ -86,40 +91,58 @@ class Agent(object):
             sy_ac_logstd: [None, self.ac_dim] -> [self.mini_batch_size * self.roll_out_h, self.ac_dim]
         """
 
-        input_shape_tensor = tf.shape(sy_ob)
-        num_samples_in_batch = input_shape_tensor[0]
-        num_time_steps = input_shape_tensor[1]
-        sy_ob_in = tf.reshape(sy_ob, [-1, self.ob_dim])
-        sy_ac_prev_in = tf.reshape(sy_ac_prev, [-1, self.ac_dim])
-        sy_golden_ob_in = tf.reshape(sy_golden_ob, [-1, self.ob_dim])
+        # input_shape_tensor = tf.shape(sy_ob)
+        # num_samples_in_batch = input_shape_tensor[0]
+        # num_time_steps = input_shape_tensor[1]
+        # sy_ob_in = tf.reshape(sy_ob, [-1, self.ob_dim])
+        # sy_ac_prev_in = tf.reshape(sy_ac_prev, [-1, self.ac_dim])
+        # sy_golden_ob_in = tf.reshape(sy_golden_ob, [-1, self.ob_dim])
+        self.sy_meta_state = tf.concat([sy_ob,
+                                       sy_golden_ob,
+                                       sy_ac_prev], axis=-1)
+        # sy_ob_out = tf.layers.dense(sy_ob_in, self.state_dim, tf.nn.relu, name='ob_fc')
+        # sy_ac_prev_out = tf.layers.dense(sy_ac_prev_in, self.state_dim, tf.nn.relu, name='ac_prev_fc')
+        # sy_golden_ob_out = tf.layers.dense(sy_golden_ob_in, self.state_dim, tf.nn.relu, name='golden_ob_fc')
+        self.sy_meta_lstm_in = build_mlp(self.sy_meta_state, self.state_dim, scope='input', n_layers=2, hidden_dim=20, output_activation=tf.nn.relu)
+        # print_debug('sy_meta_lstm_in', self.sy_meta_lstm_in)
 
-        sy_ob_out = tf.layers.dense(sy_ob_in, self.state_dim, tf.nn.relu, name='ob_fc')
-        sy_ac_prev_out = tf.layers.dense(sy_ac_prev_in, self.state_dim, tf.nn.relu, name='ac_prev_fc')
-        sy_golden_ob_out = tf.layers.dense(sy_golden_ob_in, self.state_dim, tf.nn.relu, name='golden_ob_fc')
+        # self.sy_state_layer_in = tf.concat([sy_ob_out,
+        #                                     sy_ac_prev_out,
+        #                                     sy_golden_ob_out], axis=1)
+        #
+        # self.sy_state_layer_out = tf.layers.dense(self.sy_state_layer_in, self.state_dim, tf.nn.relu, name='state_fc')
+        # self.state_lstm_in = tf.reshape(self.sy_state_layer_out, [num_samples_in_batch, num_time_steps, self.state_dim])
 
-        self.sy_state_layer_in = tf.concat([sy_ob_out,
-                                       sy_ac_prev_out,
-                                       sy_golden_ob_out], axis=1)
-
-        self.sy_state_layer_out = tf.layers.dense(self.sy_state_layer_in, self.state_dim, tf.nn.relu, name='state_fc')
-        self.state_lstm_in = tf.reshape(self.sy_state_layer_out, [num_samples_in_batch, num_time_steps, self.state_dim])
-
-        #Create LSTM cells of length batch_size 
+        #Create LSTM cells of length batch_size
         self.lstm_cell = tf.nn.rnn_cell.LSTMCell(self.hist_dim, state_is_tuple=False, name='lstm')
-        self.lstm_out = list([])
+        # self.lstm_out = list([])
+        #
+        # state = self.sy_init_history
+        # for i in range(self.roll_out_h):
+        #     # out, state = self.lstm_cell(self.state_lstm_in[:,i,:], state)
+        #     out, state = self.lstm_cell(self.sy_meta_lstm_in[:,i,:], state)
+        #     if i == 0:
+        #         self.state_1 = state
+        #     self.lstm_out.append(out)
+        # #outputs batch size,  time step, ob_dim
+        # self.lstm_out = tf.transpose(tf.stack(self.lstm_out), perm=[1,0,2])
+        # print_debug('lstm_out', self.lstm_out)
 
-        state = self.sy_init_history
-        for i in range(self.roll_out_h):
-            out, state = self.lstm_cell(self.state_lstm_in[:,i,:], state)
-            if i == 0:
-                self.state_1 = state
-            self.lstm_out.append(out)
-        #outputs batch size,  time step, ob_dim
-        self.lstm_out = tf.transpose(tf.stack(self.lstm_out), perm=[1,0,2])
+        self.lstm_out, self.state_1 = tf.nn.dynamic_rnn(cell=self.lstm_cell,
+                                                        inputs=self.sy_meta_lstm_in,
+                                                        initial_state=self.sy_init_history,
+                                                        dtype=tf.float32)
 
-        self.fc_out_in = tf.reshape(self.lstm_out, [-1, self.hist_dim])
-        sy_ac_mean = tf.layers.dense(self.fc_out_in, self.ac_dim, activation=None, name='out_mean_fc')
-        sy_ac_logstd = tf.layers.dense(self.fc_out_in, self.ac_dim, activation=None, name='out_std_fc')
+        # self.fc_out_in = tf.reshape(self.lstm_out, [-1, self.hist_dim])
+        # sy_ac_mean = tf.layers.dense(self.fc_out_in, self.ac_dim, activation=None, name='out_mean_fc')
+        # sy_ac_logstd = tf.layers.dense(self.fc_out_in, self.ac_dim, activation=None, name='out_std_fc')
+        # sy_policy_params = tf.layers.dense(self.fc_out_in, 2*self.ac_dim, activation=None, name='out_policy_fc')
+        sy_policy_params = tf.layers.dense(self.lstm_out, 2*self.ac_dim, activation=None, name='out_policy_fc')
+        # sy_policy_params = build_mlp(self.lstm_out, self.ac_dim*2, scope='output', n_layers=2, hidden_dim=128)
+        sy_policy_params = tf.reshape(sy_policy_params, [-1, self.ac_dim*2])
+        # print('sy_policy_params:{}'.format(sy_policy_params))
+        sy_ac_mean = sy_policy_params[:,:self.ac_dim]
+        sy_ac_logstd = sy_policy_params[:,self.ac_dim:]
 
         # sy_ac_mean = tf.reshape(sy_ac_mean, [self.mini_batch_size, self.roll_out_h, self.ac_dim])
         # sy_ac_logstd = tf.reshape(sy_ac_logstd, [self.mini_batch_size, self.roll_out_h, self.ac_dim])
@@ -138,7 +161,7 @@ class Agent(object):
         """
         sy_mean, sy_logstd = policy_parameters
         mvn = tfp.distributions.MultivariateNormalDiag(loc=sy_mean, scale_diag=tf.exp(sy_logstd))
-        sy_ac_in = tf.reshape(sy_ac, [self.mini_batch_size * self.roll_out_h, self.ac_dim])
+        sy_ac_in = tf.reshape(sy_ac, [tf.shape(sy_ac)[0] * tf.shape(sy_ac)[1], self.ac_dim])
         sy_logprob = mvn.log_prob(sy_ac_in)
         return sy_logprob
 
@@ -182,19 +205,20 @@ class Agent(object):
 
         self.sy_sampled_ac = self._sample_action(self.policy_parameters)
 
-    def sample_trajectories(self):
+    def sample_trajectories(self, animate_this_episode):
         # Collect paths until we have enough timesteps
         timesteps_this_batch = 0
         paths = []
         while True:
-            path = self.sample_trajectory()
+            path = self.sample_trajectory(animate_this_episode)
+            # print('trajectory sampled')
             paths.append(path)
             timesteps_this_batch += pathlength(path)
             if timesteps_this_batch > self.min_timesteps_per_batch:
                 break
         return paths, timesteps_this_batch
 
-    def sample_trajectory(self):
+    def sample_trajectory(self, animate_this_episode=False):
         ob, golden_obs_org, ac_prev = self.env.reset()
         obs, next_obs, acs, ac_prevs, rewards, golden_obs = [], [], [], [], [], []
         steps = 0
@@ -205,6 +229,10 @@ class Agent(object):
         zero_pad_ac_prev = np.zeros([1, self.roll_out_h-1, self.ac_dim])
 
         while True:
+            if animate_this_episode:
+                self.env.render()
+                time.sleep(0.01)
+
             obs.append(ob)
             ac_prevs.append(ac_prev)
 
@@ -214,10 +242,10 @@ class Agent(object):
             ac_prev = np.reshape(ac_prev, newshape=([1,1,self.ac_dim]))
 
             feed_dict={
-                self.sy_ob: np.append(ob, zero_pad_obs, axis=1),
-                self.sy_golden_ob: np.append(golden_ob, zero_pad_obs, axis=1),
-                self.sy_ac_prev: np.append(ac_prev, zero_pad_ac_prev, axis=1),
-                self.sy_seq_len: sy_seq_len,
+                self.sy_ob: ob,#np.append(ob, zero_pad_obs, axis=1),
+                self.sy_golden_ob: golden_ob, #np.append(golden_ob, zero_pad_obs, axis=1),
+                self.sy_ac_prev: ac_prev,#np.append(ac_prev, zero_pad_ac_prev, axis=1),
+                #self.sy_seq_len: sy_seq_len,
                 self.sy_init_history: init_history,
             }
 
@@ -225,11 +253,12 @@ class Agent(object):
 
             ac, history = self.sess.run([self.sy_sampled_ac, self.state_1], feed_dict=feed_dict)
             ac = ac[0]
-            if steps % 10 == 0:
-                mean, std = self.sess.run(self.policy_parameters, feed_dict=feed_dict)
+            if steps % 10 == 0 and animate_this_episode:
+                mean, std= self.sess.run(self.policy_parameters, feed_dict=feed_dict)
                 print('Mean: {}'.format(mean[0]))
                 print('std: {}'.format(np.exp(std[0])))
-                print('ac: {}'.format(np.exp(ac)))
+                print('ac: {}'.format(ac))
+                # print('history: {}'.format(history[0]))
 
                 
             acs.append(ac)
@@ -261,7 +290,7 @@ class Agent(object):
         :return: q: shape: [self.mini_batch_size, self.roll_out_h, 1]
         """
         q = np.array([])
-        re = np.reshape(re, (self.mini_batch_size, self.roll_out_h))
+        # re = np.reshape(re, (self.mini_batch_size, self.roll_out_h))
         if self.reward_to_go:
             # if reward_to_go is set the sum of all future rewards should be returned
             #check that its getting correct values to iterate through
@@ -339,8 +368,8 @@ class Agent(object):
 
         #if self.nn_baseline:
             #raise NotImplementedError
-        sy_init_history = np.zeros([self.mini_batch_size, self.hist_dim*2], dtype=np.float32)
-        sy_seq_len = np.zeros([self.mini_batch_size, ], dtype=np.int32)
+        sy_init_history = np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32)
+        # sy_seq_len = np.zeros([self.mini_batch_size, ], dtype=np.int32)
 
         feed_dict = {
             self.sy_ob: ph_ob,
@@ -348,7 +377,7 @@ class Agent(object):
             self.sy_ac: ph_ac,
             self.sy_ac_prev: ph_ac_prev,
             self.sy_adv: adv,
-            self.sy_seq_len: sy_seq_len,
+            # self.sy_seq_len: sy_seq_len,
             self.sy_init_history: sy_init_history,
         }
 
@@ -394,75 +423,88 @@ class Agent(object):
         # step_count = 0
 
         setup_logger(logdir, locals())
+        dirname = logz.G.output_dir
 
         for itr in range(n_iter):
             print("********** Iteration %i ************"%itr)
-            if itr % self.num_updates_per_iter == 0:
-                print("// Sampling Trajectories ...")
-                paths, timesteps_this_batch = self.sample_trajectories()
-                total_timesteps += timesteps_this_batch
+            print("// Sampling Trajectories ...")
+            animate = self.animate and (itr % 80 == 0) and (itr > 0)
+            paths, timesteps_this_batch = self.sample_trajectories(animate)
+            total_timesteps += timesteps_this_batch
 
-                # # Log diagnostics
-                # KEERTANA
-                returns = [path["rew"].sum() for path in paths]
-                ep_lengths = [pathlength(path) for path in paths]
-                logz.log_tabular("Time", time.time() - start)
-                logz.log_tabular("Iteration", itr)
-                logz.log_tabular("AverageReturn", np.mean(returns))
-                logz.log_tabular("StdReturn", np.std(returns))
-                logz.log_tabular("MaxReturn", np.max(returns))
-                logz.log_tabular("MinReturn", np.min(returns))
-                logz.log_tabular("EpLenMean", np.mean(ep_lengths))
-                logz.log_tabular("EpLenStd", np.std(ep_lengths))
-                logz.log_tabular("TimestepsThisBatch", timesteps_this_batch)
-                logz.log_tabular("TimestepsSoFar", total_timesteps)
-                logz.dump_tabular()
-                logz.pickle_tf_vars()
+            # IPython.embed()
+            obs_itr = np.empty(shape=[0,paths[0]['obs'].shape[1]], dtype=np.float32)
 
+            for _ in range(self.num_updates_per_iter):
+                # sample a minibatch_size of random episode with a number of transitions >= unrollings_num
+                # random_path_indices = np.random.choice(len(paths), self.mini_batch_size, replace=False)
+                # batch_obs, batch_acs, batch_ac_prevs, batch_rewards, batch_golden_obs = [], [], [], [], []
+                # random_paths = []
+                # for index in random_path_indices:
+                # #     path = paths[index]
+                # #
+                # #     # 0:random_transitions_space is the range from which a random transition
+                # #     # can be picked up while having unrollings_num - 1 transitions after it
+                # #     random_transitions_space = pathlength(path) - self.roll_out_h
+                # #
+                # #     if random_transitions_space < 0:
+                # #         obs, acs, ac_prevs, golden_obs, rews = self.pad(path)
+                # #     else:
+                # #         if random_transitions_space != 0:
+                # #             random_start, = np.random.choice(random_transitions_space, 1)
+                # #         else:
+                # #             random_start = 0
+                # #         obs = path['obs'][random_start:random_start + self.roll_out_h]
+                # #         acs = path['ac'][random_start:random_start + self.roll_out_h]
+                # #         ac_prevs = path['prev_ac'][random_start:random_start + self.roll_out_h]
+                # #         golden_obs = path['golden_obs'][random_start:random_start + self.roll_out_h]
+                # #         rews = path['rew'][random_start:random_start + self.roll_out_h]
+                # #
+                # #     obs_itr = np.concatenate([obs_itr, obs], axis=0)
+                # #     batch_obs.append(obs)
+                # #     batch_acs.append(acs)
+                # #     batch_ac_prevs.append(ac_prevs)
+                # #     batch_golden_obs.append(golden_obs)
+                # #     batch_rewards.append(rews)
+                # #     random_paths.append(path)
+                # #
+                # # ph_ob = np.array(batch_obs)
+                # # ph_golden_ob = np.array(batch_golden_obs)
+                # # ph_ac = np.array(batch_acs)
+                # # ph_ac_prev = np.array(batch_ac_prevs)
+                # re = np.array(batch_rewards)
 
-            # sample a minibatch_size of random episode with a number of transitions >= unrollings_num
-            random_path_indices = np.random.choice(len(paths), self.mini_batch_size)
-            batch_obs, batch_acs, batch_ac_prevs, batch_rewards, batch_golden_obs = [], [], [], [], []
-            random_paths = []
-            for index in random_path_indices:
-                path = paths[index]
+                ph_ob = np.stack([path['obs'] for path in paths], axis=0)
+                ph_golden_ob = np.stack([path['golden_obs'] for path in paths], axis=0)
+                re = np.stack([path['rew'] for path in paths], axis=0)
+                ph_ac = np.stack([path['ac'] for path in paths], axis=0)
+                ph_ac_prev = np.stack([path['prev_ac'] for path in paths], axis=0)
+                # obs_itr = np.concatenate([obs_itr, ph_ob[]], axis=0)
 
-                # 0:random_transitions_space is the range from which a random transition
-                # can be picked up while having unrollings_num - 1 transitions after it
-                random_transitions_space = pathlength(path) - self.roll_out_h
+                print("// Estimating return ...")
+                q, adv = self.estimate_return(ph_ob, re)
+                # just checking the shapes to make sure
+                # print("[q_n] {}".format(q.shape))
+                # print("[adv_n] {}".format(adv.shape))
+                print("// taking gradient step ...")
+                self.update_parameters(ph_ob, ph_golden_ob, ph_ac, ph_ac_prev, q, adv)
 
-                if random_transitions_space < 0:
-                    obs, acs, ac_prevs, golden_obs, rews = self.pad(path)
-                else:
-                    if random_transitions_space != 0:
-                        random_start, = np.random.choice(random_transitions_space, 1)
-                    else:
-                        random_start = 0
-                    obs = path['obs'][random_start:random_start + self.roll_out_h]
-                    acs = path['ac'][random_start:random_start + self.roll_out_h]
-                    ac_prevs = path['prev_ac'][random_start:random_start + self.roll_out_h]
-                    golden_obs = path['golden_obs'][random_start:random_start + self.roll_out_h]
-                    rews = path['rew'][random_start:random_start + self.roll_out_h]
-
-                batch_obs.append(obs)
-                batch_acs.append(acs)
-                batch_ac_prevs.append(ac_prevs)
-                batch_golden_obs.append(golden_obs)
-                batch_rewards.append(rews)
-                random_paths.append(path)
-
-            ph_ob = np.array(batch_obs)
-            ph_golden_ob = np.array(batch_golden_obs)
-            ph_ac = np.array(batch_acs)
-            ph_ac_prev = np.array(batch_ac_prevs)
-            re = np.array(batch_rewards)
-
-            print("// Estimating return ...")
-            q, adv = self.estimate_return(ph_ob, re)
-            # just checking the shapes to make sure
-            # print("[q_n] {}".format(q.shape))
-            # print("[adv_n] {}".format(adv.shape))
-            print("// taking gradient step ...")
-            self.update_parameters(ph_ob, ph_golden_ob, ph_ac, ph_ac_prev, q, adv)
+            # # Log diagnostics
+            np.save(os.path.join(dirname, '{}'.format(itr)), obs_itr)
+            # KEERTANA
+            returns = [path["rew"].sum() for path in paths]
+            ep_lengths = [pathlength(path) for path in paths]
+            logz.log_tabular("Time", time.time() - start)
+            logz.log_tabular("Iteration", itr)
+            logz.log_tabular("AverageReturn", np.mean(returns))
+            logz.log_tabular("StdReturn", np.std(returns))
+            logz.log_tabular("MaxReturn", np.max(returns))
+            logz.log_tabular("MinReturn", np.min(returns))
+            logz.log_tabular("EpLenMean", np.mean(ep_lengths))
+            logz.log_tabular("EpLenStd", np.std(ep_lengths))
+            logz.log_tabular("TimestepsThisBatch", timesteps_this_batch)
+            logz.log_tabular("TimestepsSoFar", total_timesteps)
+            logz.dump_tabular()
+            logz.pickle_tf_vars()
 
 

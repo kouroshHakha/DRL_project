@@ -3,6 +3,7 @@ import gym
 import gym_ckt
 import IPython
 import time
+import pointmass
 
 if __name__ == '__main__':
 
@@ -12,10 +13,11 @@ if __name__ == '__main__':
     parser.add_argument('--exp_name', type=str, default='rnn_vpg')
     parser.add_argument('--reward_to_go', '-rtg', action='store_true')
     parser.add_argument('--norm_adv', '-na', action='store_true')
+    parser.add_argument('--animate', '-show', action='store_true')
     parser.add_argument('--nn_baseline', '-bl', action='store_true')
     parser.add_argument('--hist_dim', '-hd', type=int, default=128)
     parser.add_argument('--state_dim', '-sd', type=int, default=128)
-    parser.add_argument('--mini_batch', '-mb', type=int, default=16)
+    parser.add_argument('--mini_batch', '-mb', type=int, default=32)
     parser.add_argument('--rollout', '-ro', type=int, default=20)
     parser.add_argument('--lr', '-lr', type=float, default=0.001)
     parser.add_argument('--gamma', '-g', type=float, default=0.99)
@@ -28,7 +30,8 @@ if __name__ == '__main__':
     if not(os.path.exists(logdir)):
         os.makedirs(logdir)
 
-    env = gym.make(args.env_name)
+    # env = gym.make(args.env_name)
+    env = pointmass.PointMass()
 
     n_iter = 100
 
@@ -50,6 +53,7 @@ if __name__ == '__main__':
     }
     agent = Agent(
         env=env,
+        animate=(args.animate and env.__class__.__name__ == "PointMass"),
         computation_graph_args=computation_graph_args,
         pg_flavor_args=pg_flavor_args,
 

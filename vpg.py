@@ -50,7 +50,7 @@ class VPG(object):
 
 
         self.min_timesteps_per_batch = 1000
-        self.max_path_length = 10
+        self.max_path_length = 5
 
         self.gamma = pg_flavor_args['gamma']
         self.reward_to_go = pg_flavor_args['reward_to_go']

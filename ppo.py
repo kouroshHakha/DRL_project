@@ -1,12 +1,8 @@
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
-import gym
-import scipy.signal
 import os
-import time
 import inspect
-from multiprocessing import Process
 import time
 from util import *
 import logz
@@ -18,7 +14,7 @@ def pathlength(path):
 
 def setup_logger(logdir, locals_):
     logz.configure_output_dir(logdir)
-    args = inspect.getargspec(AC.__init__)[0]
+    args = inspect.getargspec(PPO.__init__)[0]
     # params = []
     # for k in args:
     #     if (k in locals_) and (k != 'self'):
@@ -28,7 +24,7 @@ def setup_logger(logdir, locals_):
     )
     logz.save_params(params)
 
-class AC(object):
+class PPO(object):
     def __init__(self,
                  env,
                  animate,
@@ -54,6 +50,8 @@ class AC(object):
 
         self.num_grad_steps_per_target_update = 4
         self.num_target_updates = 4
+
+        self.num_ppo_updates = 10
 
 
         self.gamma = pg_flavor_args['gamma']
@@ -89,6 +87,11 @@ class AC(object):
         self.sy_target_values = tf.placeholder(dtype=tf.float32, shape=[None, None,])
         self.init_critic_history = tf.placeholder(dtype=tf.float32, shape=[None, self.hist_dim*2])
 
+        ####################################################################################
+        ##### PPO
+        ####################################################################################
+        self.sy_old_log_prob_n = tf.placeholder(shape=[None, None], name="fixed_log_prob", dtype=tf.float32)
+
 
 
     def _build_actor(self, sy_ob, sy_ac_prev, sy_golden_ob):
@@ -123,6 +126,34 @@ class AC(object):
             sy_ac_logstd = sy_policy_params[:,self.ac_dim:]
 
             return sy_ac_mean, sy_ac_logstd
+
+    def ppo_loss(self, new_log_probs, old_log_probs, advantages, clip_epsilon=0.1):#, entropy_coeff=1e-4):
+        """
+        given:
+            clip_epsilon
+
+        arguments:
+            advantages (mini_bsize,)
+            states (mini_bsize,)
+            actions (mini_bsize,)
+            fixed_log_probs (mini_bsize,)
+
+        intermediate results:
+            states, actions --> log_probs
+            log_probs, fixed_log_probs --> ratio
+            advantages, ratio --> surr1
+            ratio, clip_epsilon, advantages --> surr2
+            surr1, surr2 --> policy_surr_loss
+        """
+        ratio = tf.exp(new_log_probs - old_log_probs)
+        surr1 = ratio * advantages
+        surr2 = tf.clip_by_value(ratio, clip_value_min=1.0-clip_epsilon, clip_value_max=1.0+clip_epsilon) * advantages
+        policy_surr_loss = -tf.reduce_mean(tf.minimum(surr1, surr2))
+
+        probs = tf.exp(new_log_probs)
+        # entropy = tf.reduce_sum(-(log_probs * probs))
+        # policy_surr_loss -= entropy_coeff * entropy
+        return policy_surr_loss
 
     def _build_critic(self):
         with tf.variable_scope('critic'):
@@ -184,10 +215,9 @@ class AC(object):
         # print_debug("log_prob", self.sy_logprob)
         # print_debug("sy_adv", self.sy_adv)
 
-        sy_adv = tf.reshape(self.sy_adv, [-1,])
-        self.loss = -tf.reduce_mean(tf.multiply(self.sy_logprob, sy_adv))
+        # self.loss = -tf.reduce_mean(tf.multiply(self.sy_logprob, sy_adv))
 
-        self.update_actor_op = self.optimizer.minimize(self.loss)
+        # self.update_actor_op = self.optimizer.minimize(self.loss)
 
         self.sy_sampled_ac = self._sample_action(self.policy_parameters)
 
@@ -198,6 +228,14 @@ class AC(object):
         self._build_critic()
         self.critic_loss = tf.losses.mean_squared_error(self.sy_target_values, self.critic_prediction)
         self.critic_update_op = tf.train.AdamOptimizer().minimize(self.critic_loss)
+
+        ####################################################################################
+        ##### PPO
+        ####################################################################################
+        sy_adv = tf.reshape(self.sy_adv, [-1,])
+        sy_old_log_prob_n = tf.reshape(self.sy_old_log_prob_n, [-1,])
+        self.policy_surr_loss = self.ppo_loss(self.sy_logprob, sy_old_log_prob_n, sy_adv)
+        self.update_actor_op = self.optimizer.minimize(self.policy_surr_loss)
 
 
     def sample_trajectories(self, animate_this_episode):
@@ -313,7 +351,7 @@ class AC(object):
                                                self.init_critic_history: init_critic_history,
                                                self.sy_target_values: target_n})
 
-    def update_actor(self, ph_ob, ph_golden_ob, ph_ac, ph_ac_prev, adv):
+    def update_actor(self, ph_ob, ph_golden_ob, ph_ac, ph_ac_prev, adv, ph_old_log_prob):
         """
         KEERTANA
         Update the parameters of the policy and (possibly) the neural network baseline,
@@ -341,13 +379,14 @@ class AC(object):
             self.sy_ac_prev: ph_ac_prev,
             self.sy_adv: adv,
             self.sy_init_history: sy_init_history,
+            self.sy_old_log_prob_n: ph_old_log_prob
         }
 
-        l, = self.sess.run([self.loss], feed_dict=feed_dict)
+        l, = self.sess.run([self.policy_surr_loss], feed_dict=feed_dict)
 
         print("[Debug_training] l- {}".format(l))
         self.sess.run([self.update_actor_op], feed_dict=feed_dict)
-        l, = self.sess.run([self.loss], feed_dict=feed_dict)
+        l, = self.sess.run([self.policy_surr_loss], feed_dict=feed_dict)
         print("[Debug_training] l+ {}".format(l))
 
 
@@ -378,13 +417,30 @@ class AC(object):
             ph_ac_prev = np.stack([path['prev_ac'] for path in paths], axis=0)
             ph_terminal = np.stack([path['terminal'] for path in paths], axis=0)
 
+            old_prob_nt = self.sess.run(self.sy_logprob, feed_dict={self.sy_ob: ph_ob,
+                                                                    self.sy_golden_ob: ph_golden_ob,
+                                                                    self.sy_ac_prev: ph_ac_prev,
+                                                                    self.sy_init_history: np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32),
+                                                                    self.sy_ac: ph_ac,
+                                                                    })
 
+            ph_old_prob = np.reshape(old_prob_nt, newshape=[ph_ob.shape[0], ph_ob.shape[1]])
             print("// taking gradient steps on critic ...")
             self.update_critic(ph_ob, ph_golden_ob, ph_ac_prev, ph_next_ob, re, ph_terminal)
             print("// getting new advantage estimates ...")
             ph_adv = self.estimate_advantage(ph_ob, ph_golden_ob, ph_ac_prev, ph_next_ob, re, ph_terminal)
-            print("// taking gradient step on actor ...")
-            self.update_actor(ph_ob, ph_golden_ob, ph_ac, ph_ac_prev, ph_adv)
+
+            for _ in range(self.num_ppo_updates):
+
+                random_path_indices = np.random.choice(len(paths), self.mini_batch_size, replace=False)
+                ob = ph_ob[random_path_indices]
+                golden_ob = ph_golden_ob[random_path_indices]
+                ac = ph_ac[random_path_indices]
+                ac_prev = ph_ac_prev[random_path_indices]
+                adv = ph_adv[random_path_indices]
+                old_log_prob = ph_old_prob[random_path_indices]
+                print("// taking gradient step on actor ...")
+                self.update_actor(ob, golden_ob, ac, ac_prev, adv, old_log_prob)
 
 
             # # Log diagnostics

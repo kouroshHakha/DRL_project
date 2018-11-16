@@ -6,6 +6,7 @@ import pointmass
 import os
 from vpg import VPG
 from ac import AC
+from ppo import PPO
 
 if __name__ == '__main__':
 
@@ -25,12 +26,12 @@ if __name__ == '__main__':
     parser.add_argument('--rollout', '-ro', type=int, default=20)
     parser.add_argument('--lr', '-lr', type=float, default=0.001)
     parser.add_argument('--gamma', '-g', type=float, default=0.99)
-    parser.add_argument('--seed', '-s', type=int, default=10)
+    parser.add_argument('--seed', '-s', type=int, default=20)
     args = parser.parse_args()
 
     if not(os.path.exists('data')):
         os.makedirs('data')
-    logdir = args.exp_name + '_' + args.agent + '_' + args.env_name + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
+    logdir = args.exp_name + '_' + args.env_name + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
     logdir = os.path.join('data', logdir)
     if not(os.path.exists(logdir)):
         os.makedirs(logdir)
@@ -57,7 +58,7 @@ if __name__ == '__main__':
         'seed': args.seed,
     }
 
-    agent = None
+    # agent = None
 
     if args.agent == 'vpg':
         agent = VPG(
@@ -70,6 +71,13 @@ if __name__ == '__main__':
     elif args.agent == 'ac':
         agent = AC(
             env=env,
+            animate=(args.animate and env.__class__.__name__ == "PointMass"),
+            computation_graph_args=computation_graph_args,
+            pg_flavor_args=pg_flavor_args,
+
+        )
+    elif args.agent == 'ppo':
+        agent = PPO(env=env,
             animate=(args.animate and env.__class__.__name__ == "PointMass"),
             computation_graph_args=computation_graph_args,
             pg_flavor_args=pg_flavor_args,

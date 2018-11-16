@@ -18,7 +18,7 @@ def pathlength(path):
 
 def setup_logger(logdir, locals_):
     logz.configure_output_dir(logdir)
-    args = inspect.getargspec(Agent.__init__)[0]
+    args = inspect.getargspec(VPG.__init__)[0]
     # params = []
     # for k in args:
     #     if (k in locals_) and (k != 'self'):
@@ -28,7 +28,7 @@ def setup_logger(logdir, locals_):
     )
     logz.save_params(params)
 
-class Agent(object):
+class VPG(object):
     def __init__(self,
                  env,
                  animate,
@@ -51,16 +51,18 @@ class Agent(object):
 
         self.min_timesteps_per_batch = 1000
         self.max_path_length = 10
-        self.num_updates_per_iter = 1
 
         self.gamma = pg_flavor_args['gamma']
         self.reward_to_go = pg_flavor_args['reward_to_go']
         self.nn_baseline = pg_flavor_args['nn_baseline']
         self.normalize_advantages = pg_flavor_args['normalize_advantages']
+        seed = pg_flavor_args['seed']
         self.animate = animate
 
-        np.random.seed(20)
-        tf.set_random_seed(20)
+        # initialize random seed
+        np.random.seed(seed)
+        tf.set_random_seed(seed)
+        self.env.seed(seed)
 
     def init_tf_sess(self):
         tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1)
@@ -210,7 +212,10 @@ class Agent(object):
         timesteps_this_batch = 0
         paths = []
         while True:
-            path = self.sample_trajectory(animate_this_episode)
+            anim = animate_this_episode and (len(paths) % 10 == 0)
+            if anim:
+                print("-"*30)
+            path = self.sample_trajectory(anim)
             # print('trajectory sampled')
             paths.append(path)
             timesteps_this_batch += pathlength(path)
@@ -253,7 +258,7 @@ class Agent(object):
 
             ac, history = self.sess.run([self.sy_sampled_ac, self.state_1], feed_dict=feed_dict)
             ac = ac[0]
-            if steps % 10 == 0 and animate_this_episode:
+            if animate_this_episode:
                 mean, std= self.sess.run(self.policy_parameters, feed_dict=feed_dict)
                 print('Mean: {}'.format(mean[0]))
                 print('std: {}'.format(np.exp(std[0])))
@@ -428,66 +433,65 @@ class Agent(object):
         for itr in range(n_iter):
             print("********** Iteration %i ************"%itr)
             print("// Sampling Trajectories ...")
-            animate = self.animate and (itr % 80 == 0) and (itr > 0)
+            animate = self.animate and (itr % 99 == 0) and (itr > 0)
             paths, timesteps_this_batch = self.sample_trajectories(animate)
             total_timesteps += timesteps_this_batch
 
             # IPython.embed()
             obs_itr = np.empty(shape=[0,paths[0]['obs'].shape[1]], dtype=np.float32)
 
-            for _ in range(self.num_updates_per_iter):
-                # sample a minibatch_size of random episode with a number of transitions >= unrollings_num
-                # random_path_indices = np.random.choice(len(paths), self.mini_batch_size, replace=False)
-                # batch_obs, batch_acs, batch_ac_prevs, batch_rewards, batch_golden_obs = [], [], [], [], []
-                # random_paths = []
-                # for index in random_path_indices:
-                # #     path = paths[index]
-                # #
-                # #     # 0:random_transitions_space is the range from which a random transition
-                # #     # can be picked up while having unrollings_num - 1 transitions after it
-                # #     random_transitions_space = pathlength(path) - self.roll_out_h
-                # #
-                # #     if random_transitions_space < 0:
-                # #         obs, acs, ac_prevs, golden_obs, rews = self.pad(path)
-                # #     else:
-                # #         if random_transitions_space != 0:
-                # #             random_start, = np.random.choice(random_transitions_space, 1)
-                # #         else:
-                # #             random_start = 0
-                # #         obs = path['obs'][random_start:random_start + self.roll_out_h]
-                # #         acs = path['ac'][random_start:random_start + self.roll_out_h]
-                # #         ac_prevs = path['prev_ac'][random_start:random_start + self.roll_out_h]
-                # #         golden_obs = path['golden_obs'][random_start:random_start + self.roll_out_h]
-                # #         rews = path['rew'][random_start:random_start + self.roll_out_h]
-                # #
-                # #     obs_itr = np.concatenate([obs_itr, obs], axis=0)
-                # #     batch_obs.append(obs)
-                # #     batch_acs.append(acs)
-                # #     batch_ac_prevs.append(ac_prevs)
-                # #     batch_golden_obs.append(golden_obs)
-                # #     batch_rewards.append(rews)
-                # #     random_paths.append(path)
-                # #
-                # # ph_ob = np.array(batch_obs)
-                # # ph_golden_ob = np.array(batch_golden_obs)
-                # # ph_ac = np.array(batch_acs)
-                # # ph_ac_prev = np.array(batch_ac_prevs)
-                # re = np.array(batch_rewards)
+            # sample a minibatch_size of random episode with a number of transitions >= unrollings_num
+            # random_path_indices = np.random.choice(len(paths), self.mini_batch_size, replace=False)
+            # batch_obs, batch_acs, batch_ac_prevs, batch_rewards, batch_golden_obs = [], [], [], [], []
+            # random_paths = []
+            # for index in random_path_indices:
+            # #     path = paths[index]
+            # #
+            # #     # 0:random_transitions_space is the range from which a random transition
+            # #     # can be picked up while having unrollings_num - 1 transitions after it
+            # #     random_transitions_space = pathlength(path) - self.roll_out_h
+            # #
+            # #     if random_transitions_space < 0:
+            # #         obs, acs, ac_prevs, golden_obs, rews = self.pad(path)
+            # #     else:
+            # #         if random_transitions_space != 0:
+            # #             random_start, = np.random.choice(random_transitions_space, 1)
+            # #         else:
+            # #             random_start = 0
+            # #         obs = path['obs'][random_start:random_start + self.roll_out_h]
+            # #         acs = path['ac'][random_start:random_start + self.roll_out_h]
+            # #         ac_prevs = path['prev_ac'][random_start:random_start + self.roll_out_h]
+            # #         golden_obs = path['golden_obs'][random_start:random_start + self.roll_out_h]
+            # #         rews = path['rew'][random_start:random_start + self.roll_out_h]
+            # #
+            # #     obs_itr = np.concatenate([obs_itr, obs], axis=0)
+            # #     batch_obs.append(obs)
+            # #     batch_acs.append(acs)
+            # #     batch_ac_prevs.append(ac_prevs)
+            # #     batch_golden_obs.append(golden_obs)
+            # #     batch_rewards.append(rews)
+            # #     random_paths.append(path)
+            # #
+            # # ph_ob = np.array(batch_obs)
+            # # ph_golden_ob = np.array(batch_golden_obs)
+            # # ph_ac = np.array(batch_acs)
+            # # ph_ac_prev = np.array(batch_ac_prevs)
+            # re = np.array(batch_rewards)
 
-                ph_ob = np.stack([path['obs'] for path in paths], axis=0)
-                ph_golden_ob = np.stack([path['golden_obs'] for path in paths], axis=0)
-                re = np.stack([path['rew'] for path in paths], axis=0)
-                ph_ac = np.stack([path['ac'] for path in paths], axis=0)
-                ph_ac_prev = np.stack([path['prev_ac'] for path in paths], axis=0)
-                # obs_itr = np.concatenate([obs_itr, ph_ob[]], axis=0)
+            ph_ob = np.stack([path['obs'] for path in paths], axis=0)
+            ph_golden_ob = np.stack([path['golden_obs'] for path in paths], axis=0)
+            re = np.stack([path['rew'] for path in paths], axis=0)
+            ph_ac = np.stack([path['ac'] for path in paths], axis=0)
+            ph_ac_prev = np.stack([path['prev_ac'] for path in paths], axis=0)
+            # obs_itr = np.concatenate([obs_itr, ph_ob[]], axis=0)
 
-                print("// Estimating return ...")
-                q, adv = self.estimate_return(ph_ob, re)
-                # just checking the shapes to make sure
-                # print("[q_n] {}".format(q.shape))
-                # print("[adv_n] {}".format(adv.shape))
-                print("// taking gradient step ...")
-                self.update_parameters(ph_ob, ph_golden_ob, ph_ac, ph_ac_prev, q, adv)
+            print("// Estimating return ...")
+            q, adv = self.estimate_return(ph_ob, re)
+            # just checking the shapes to make sure
+            # print("[q_n] {}".format(q.shape))
+            # print("[adv_n] {}".format(adv.shape))
+            print("// taking gradient step ...")
+            self.update_parameters(ph_ob, ph_golden_ob, ph_ac, ph_ac_prev, q, adv)
 
             # # Log diagnostics
             np.save(os.path.join(dirname, '{}'.format(itr)), obs_itr)

@@ -1,16 +1,20 @@
-from train_pg import *
 import gym
 import gym_ckt
 import IPython
 import time
 import pointmass
+import os
+from vpg import VPG
+from ac import AC
 
 if __name__ == '__main__':
 
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('env_name', type=str)
-    parser.add_argument('--exp_name', type=str, default='rnn_vpg')
+    parser.add_argument('agent', type=str, default='vpg | ac | ppo')
+    parser.add_argument('--exp_name', type=str, default='rnn')
+    parser.add_argument('--n_iter', '-n', type=int, default=100)
     parser.add_argument('--reward_to_go', '-rtg', action='store_true')
     parser.add_argument('--norm_adv', '-na', action='store_true')
     parser.add_argument('--animate', '-show', action='store_true')
@@ -21,11 +25,12 @@ if __name__ == '__main__':
     parser.add_argument('--rollout', '-ro', type=int, default=20)
     parser.add_argument('--lr', '-lr', type=float, default=0.001)
     parser.add_argument('--gamma', '-g', type=float, default=0.99)
+    parser.add_argument('--seed', '-s', type=int, default=10)
     args = parser.parse_args()
 
     if not(os.path.exists('data')):
         os.makedirs('data')
-    logdir = args.exp_name + '_' + args.env_name + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
+    logdir = args.exp_name + '_' + args.agent + '_' + args.env_name + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
     logdir = os.path.join('data', logdir)
     if not(os.path.exists(logdir)):
         os.makedirs(logdir)
@@ -33,7 +38,6 @@ if __name__ == '__main__':
     # env = gym.make(args.env_name)
     env = pointmass.PointMass()
 
-    n_iter = 100
 
     computation_graph_args = {
         'ob_dim': env.observation_space.shape[0],
@@ -50,18 +54,32 @@ if __name__ == '__main__':
         'reward_to_go': args.reward_to_go,
         'nn_baseline': args.nn_baseline,
         'normalize_advantages': args.norm_adv,
+        'seed': args.seed,
     }
-    agent = Agent(
-        env=env,
-        animate=(args.animate and env.__class__.__name__ == "PointMass"),
-        computation_graph_args=computation_graph_args,
-        pg_flavor_args=pg_flavor_args,
 
-    )
+    agent = None
+
+    if args.agent == 'vpg':
+        agent = VPG(
+            env=env,
+            animate=(args.animate and env.__class__.__name__ == "PointMass"),
+            computation_graph_args=computation_graph_args,
+            pg_flavor_args=pg_flavor_args,
+
+        )
+    elif args.agent == 'ac':
+        agent = AC(
+            env=env,
+            animate=(args.animate and env.__class__.__name__ == "PointMass"),
+            computation_graph_args=computation_graph_args,
+            pg_flavor_args=pg_flavor_args,
+
+        )
+
 
     agent.build_computation_graph()
 
     # tensorflow: config, session, variable initialization
     agent.init_tf_sess()
 
-    agent.train(n_iter, os.path.join(logdir, '%d'%0))
+    agent.train(args.n_iter, os.path.join(logdir, '%d'%0))

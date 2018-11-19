@@ -2,11 +2,13 @@ import gym
 import gym_ckt
 import IPython
 import time
-import pointmass
+from pointmass import PointMass
+from pointmass2 import PointMass as PointMass2
 import os
 from vpg import VPG
 from ac import AC
-from ppo_ac2 import PPO
+from ppo_ac import PPO as PPO
+from ppo_ac2 import PPO as PPO2
 from ckt_env2 import CSAmp
 
 if __name__ == '__main__':
@@ -37,9 +39,14 @@ if __name__ == '__main__':
     if not(os.path.exists(logdir)):
         os.makedirs(logdir)
 
-    # env = gym.make(args.env_name)
-    # env = pointmass.PointMass()
-    env = CSAmp()
+    if args.env_name == 'pm':
+        env = PointMass()
+    if args.env_name == 'pm2':
+        env = PointMass2()
+    elif  args.env_name == 'ckt-v0':
+        env = CSAmp()
+    else:
+        env = gym.make(args.env_name)
 
 
     computation_graph_args = {
@@ -80,6 +87,13 @@ if __name__ == '__main__':
         )
     elif args.agent == 'ppo':
         agent = PPO(env=env,
+            animate=(args.animate and env.__class__.__name__ == "PointMass"),
+            computation_graph_args=computation_graph_args,
+            pg_flavor_args=pg_flavor_args,
+
+        )
+    elif args.agent == 'ppo2':
+        agent = PPO2(env=env,
             animate=(args.animate and env.__class__.__name__ == "PointMass"),
             computation_graph_args=computation_graph_args,
             pg_flavor_args=pg_flavor_args,

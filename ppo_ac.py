@@ -43,7 +43,7 @@ class PPO(object):
         self.roll_out_h = computation_graph_args['roll_out_h']
 
         self.learning_rate = computation_graph_args['learning_rate']
-        self.optimizer = tf.train.AdamOptimizer(self.learning_rate)
+        self.optimizer = tf.train.AdamOptimizer()
 
 
         self.min_timesteps_per_batch = 500

@@ -6,7 +6,8 @@ import pointmass
 import os
 from vpg import VPG
 from ac import AC
-from ppo import PPO
+from ppo_ac2 import PPO
+from ckt_env2 import CSAmp
 
 if __name__ == '__main__':
 
@@ -22,9 +23,9 @@ if __name__ == '__main__':
     parser.add_argument('--nn_baseline', '-bl', action='store_true')
     parser.add_argument('--hist_dim', '-hd', type=int, default=128)
     parser.add_argument('--state_dim', '-sd', type=int, default=128)
-    parser.add_argument('--mini_batch', '-mb', type=int, default=32)
+    parser.add_argument('--mini_batch', '-mb', type=int, default=16)
     parser.add_argument('--rollout', '-ro', type=int, default=20)
-    parser.add_argument('--lr', '-lr', type=float, default=0.001)
+    parser.add_argument('--lr', '-lr', type=float, default=0.003)
     parser.add_argument('--gamma', '-g', type=float, default=0.99)
     parser.add_argument('--seed', '-s', type=int, default=20)
     args = parser.parse_args()
@@ -37,7 +38,8 @@ if __name__ == '__main__':
         os.makedirs(logdir)
 
     # env = gym.make(args.env_name)
-    env = pointmass.PointMass()
+    # env = pointmass.PointMass()
+    env = CSAmp()
 
 
     computation_graph_args = {
@@ -89,5 +91,4 @@ if __name__ == '__main__':
 
     # tensorflow: config, session, variable initialization
     agent.init_tf_sess()
-
     agent.train(args.n_iter, os.path.join(logdir, '%d'%0))

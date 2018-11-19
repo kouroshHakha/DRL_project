@@ -8,6 +8,7 @@ from util import *
 import logz
 import time
 import IPython
+import pickle
 
 def pathlength(path):
     return len(path["rew"])
@@ -45,7 +46,7 @@ class PPO(object):
         self.optimizer = tf.train.AdamOptimizer(self.learning_rate)
 
 
-        self.min_timesteps_per_batch = 1000
+        self.min_timesteps_per_batch = 500
         self.max_path_length = 5
 
         self.num_grad_steps_per_target_update = 4
@@ -114,7 +115,6 @@ class PPO(object):
 
             #Create LSTM cells of length batch_size
             self.lstm_cell = tf.nn.rnn_cell.LSTMCell(self.hist_dim, state_is_tuple=False, name='lstm')
-
             self.lstm_out, self.state_1 = tf.nn.dynamic_rnn(cell=self.lstm_cell,
                                                             inputs=self.sy_meta_lstm_in,
                                                             initial_state=self.sy_init_history,
@@ -268,6 +268,7 @@ class PPO(object):
             if animate_this_episode:
                 self.env.render()
                 time.sleep(0.01)
+                self.env.close()
 
             obs.append(ob)
             ac_prevs.append(ac_prev)
@@ -406,8 +407,7 @@ class PPO(object):
             total_timesteps += timesteps_this_batch
 
             # IPython.embed()
-            obs_itr = np.empty(shape=[0,paths[0]['obs'].shape[1]], dtype=np.float32)
-
+            # obs_itr = np.empty(shape=[0,paths[0]['obs'].shape[1]], dtype=np.float32)
 
             ph_ob = np.stack([path['obs'] for path in paths], axis=0)
             ph_next_ob = np.stack([path['next_obs'] for path in paths], axis=0)
@@ -416,6 +416,15 @@ class PPO(object):
             ph_ac = np.stack([path['ac'] for path in paths], axis=0)
             ph_ac_prev = np.stack([path['prev_ac'] for path in paths], axis=0)
             ph_terminal = np.stack([path['terminal'] for path in paths], axis=0)
+
+            # # Log diagnostics
+            if self.env.__class__.__name__ == "PointMass":
+                obs_log = dict(
+                    ob=ph_ob,
+                    golden_ob=ph_golden_ob,
+                )
+                with open(os.path.join(dirname, '{}.dpkl'.format(itr)), 'wb') as f:
+                    pickle.dump(obs_log, f)
 
             old_prob_nt = self.sess.run(self.sy_logprob, feed_dict={self.sy_ob: ph_ob,
                                                                     self.sy_golden_ob: ph_golden_ob,
@@ -443,8 +452,7 @@ class PPO(object):
                 self.update_actor(ob, golden_ob, ac, ac_prev, adv, old_log_prob)
 
 
-            # # Log diagnostics
-            np.save(os.path.join(dirname, '{}'.format(itr)), obs_itr)
+
             # KEERTANA
             returns = [path["rew"].sum() for path in paths]
             ep_lengths = [pathlength(path) for path in paths]

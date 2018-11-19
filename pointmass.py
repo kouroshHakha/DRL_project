@@ -1,11 +1,17 @@
 import gym
 from gym.envs.registration import EnvSpec
 import imageio
+import matplotlib
+matplotlib.use('agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import os
 import seaborn as sns
 from tqdm import tqdm
+import pickle
+import IPython
+import time
+import scipy.ndimage
 
 class Env(object):
     def __init__(self):
@@ -37,11 +43,12 @@ class PointMass(Env):
 
     def reset(self):
         plt.close()
-        self.state = np.array([self.goal_padding, self.goal_padding])
+        # self.state = np.array([self.goal_padding, self.goal_padding])
+        self.state = np.random.randint(1,self.scale+1,size=[2,])
         state = self.state/self.scale
-        self.gob = np.array([1.0,10.0])
-        # self.gob = np.random.randint(1,self.scale+1,size=[2,])
-        # self.gob = self.gob*1.0
+        # self.gob = np.array([5.0, 18.0])
+        self.gob = np.random.randint(1,self.scale+1,size=[2,])
+        self.gob = self.gob*1.0
         # self.gob = np.array([1-self.goal_padding/self.scale,1-self.goal_padding/self.scale])
         a0 = np.array([self.goal_padding, self.goal_padding])
         return self.state, self.gob, a0
@@ -63,20 +70,7 @@ class PointMass(Env):
         self.state = np.array([new_x, new_y])
         state = self.state/self.scale
 
-        # reward
-        # reg_term = -0.01*np.sum(action**2)
-        # threshold = self.scale - self.goal_padding
-        # if new_x > threshold and new_y > threshold:
-        # #     # print("goal met")
-        #     reward = 10 #+ reg_term
-        # else:
-        #     reg_term = -np.sum(abs(self.state - threshold) / threshold)
-        #     reward = 0 + reg_term
-
-        if abs(new_x-self.gob[0]) <= 0 and abs(new_y-self.gob[1]) <= 0:
-        # if new_x-self.gob[0] <= 2 and new_x-self.gob[0] >=0 and new_y-self.gob[1] <= 2 and new_y-self.gob[1] >=0:
-        # if new_x>self.gob[0] and new_y>self.gob[1]:
-        #     print("goal met")
+        if abs(new_x-self.gob[0]) <= 1 and abs(new_y-self.gob[1]) <= 1:
             reward = 10
         else:
             reg_term = -np.sum(abs(self.state - self.gob) / self.gob)
@@ -122,21 +116,35 @@ class PointMass(Env):
         ax = sns.heatmap(a)
         plt.draw()
         plt.pause(0.001)
-        plt.clf()        
+        plt.clf()
 
-    def visualize(self, states, itr, dirname):
-        if states is None:
-            states = np.load(os.path.join(dirname, '{}.npy'.format(itr)))
-        indices = np.array([int(self.preprocess(s)) for s in states])
-        a = np.zeros(int(self.grid_size))
-        for i in indices:
-            a[i] += 1
-        max_freq = np.max(a)
-        a/=float(max_freq)  # normalize
-        a = np.reshape(a, (self.scale, self.scale))
-        ax = sns.heatmap(a)
-        plt.savefig(os.path.join(dirname, '{}.png'.format(itr)))
-        plt.close()
+    def close(self):
+        # Nothing happens
+        pass
+
+    def visualize(self, itr, fname):
+        with open(fname, 'rb') as f:
+            data = pickle.load(f)
+            ob_array = data['ob']
+            gob_array = data['golden_ob']
+        ob_array = np.reshape(ob_array, newshape=[-1,2]) / self.scale
+        gob_array = np.reshape(gob_array, newshape=[-1,2]) / self.scale
+
+        ob_indices = np.array([int(self.preprocess(s)) for s in ob_array])
+        gob_indices = np.array([int(self.preprocess(s)) for s in gob_array])
+
+        images = []
+        start = time.time()
+        for cnt, i,j in zip(range(len(ob_indices)), ob_indices, gob_indices):
+            a = np.zeros(int(self.grid_size))
+            a[i] = 1
+            a[j] = 0.5
+            a = np.reshape(a, (self.scale, self.scale))
+            a = scipy.ndimage.zoom(a, 200//self.scale, order=0)
+            images.append(a)
+
+        dirname = os.path.dirname(fname)
+        imageio.mimsave(os.path.join(dirname, '{}.gif'.format(itr)), images)
 
     def create_gif(self, dirname, density=False):
         images = []
@@ -152,9 +160,13 @@ class PointMass(Env):
 
     def create_visualization(self, dirname, density=False):
         for s in os.listdir(dirname):
-            for i in tqdm(range(100)):
-                self.visualize(None, i, os.path.join(dirname, s))
-            self.create_gif(os.path.join(dirname, str(s)))
+            path = os.path.join(dirname, s)
+            if os.path.isfile(path):
+                continue
+            iters = [s for s in os.listdir(path) if s.endswith(".dpkl")]
+            for i in tqdm(range(len(iters))):
+                self.visualize(i, os.path.join(dirname, s + '/'+ str(iters[i])))
+            # self.create_gif(os.path.join(dirname, str(s)))
 
 def debug():
     logdir = 'pm_debug'

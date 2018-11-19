@@ -51,7 +51,8 @@ class PointMass(Env):
         # self.gob = self.gob*1.0
         # self.gob = np.array([1-self.goal_padding/self.scale,1-self.goal_padding/self.scale])
         # a0 = np.array([self.goal_padding, self.goal_padding])
-        return np.concatenate([self.state/self.scale, self.gob/self.scale])
+        return np.concatenate([self.state, self.gob])
+        # return np.concatenate([self.state/self.scale, self.gob/self.scale])
 
     def step(self, action):
         x, y = action
@@ -79,7 +80,7 @@ class PointMass(Env):
 
         # done
         done = False
-        ret_ob = np.concatenate([state, self.gob/self.scale])
+        ret_ob = np.concatenate([self.state, self.gob])
         return ret_ob, reward, done, None
 
     def preprocess(self, state):
@@ -128,17 +129,19 @@ class PointMass(Env):
             data = pickle.load(f)
             ob_array = data['ob']
             # gob_array = data['golden_ob']
-        ob_array = np.reshape(ob_array, newshape=[-1,2]) / self.scale
-        # gob_array = np.reshape(gob_array, newshape=[-1,2]) / self.scale
+        ob_array = np.reshape(ob_array, newshape=[-1,self.observation_space.shape[0]]) / self.scale
+        ob_array = ob_array[:,:2]
+        gob_array = np.stack([self.gob for _ in range(len(ob_array))], axis=0)/ self.scale
 
         ob_indices = np.array([int(self.preprocess(s)) for s in ob_array])
-        # gob_indices = np.array([int(self.preprocess(s)) for s in gob_array])
+        gob_indices = np.array([int(self.preprocess(s)) for s in gob_array])
 
         images = []
         start = time.time()
-        for cnt, i in zip(range(len(ob_indices)), ob_indices):
+        for cnt, i, j in zip(range(len(ob_indices)), ob_indices, gob_indices):
             a = np.zeros(int(self.grid_size))
             a[i] = 1
+            a[j]=0.5
             a = np.reshape(a, (self.scale, self.scale))
             a = scipy.ndimage.zoom(a, 200//self.scale, order=0)
             images.append(a)
@@ -193,6 +196,7 @@ if __name__ == "__main__":
     parser.add_argument('dirname', type=str)
     args = parser.parse_args()
     env = PointMass()
+    env.reset()
     env.create_visualization(args.dirname)
 
 

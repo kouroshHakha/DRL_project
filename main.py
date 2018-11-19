@@ -7,9 +7,10 @@ from pointmass2 import PointMass as PointMass2
 import os
 from vpg import VPG
 from ac import AC
-from ppo_ac import PPO as PPO
 from ppo_ac2 import PPO as PPO2
-from ckt_env2 import CSAmp
+from ppo_ac import PPO as PPO
+from ckt_env import CSAmp
+from ckt_env2 import CSAmp as CSAmp2
 
 if __name__ == '__main__':
 
@@ -27,7 +28,7 @@ if __name__ == '__main__':
     parser.add_argument('--state_dim', '-sd', type=int, default=128)
     parser.add_argument('--mini_batch', '-mb', type=int, default=16)
     parser.add_argument('--rollout', '-ro', type=int, default=20)
-    parser.add_argument('--lr', '-lr', type=float, default=0.003)
+    parser.add_argument('--lr', '-lr', type=float, default=0.001)
     parser.add_argument('--gamma', '-g', type=float, default=0.99)
     parser.add_argument('--seed', '-s', type=int, default=20)
     args = parser.parse_args()
@@ -41,10 +42,12 @@ if __name__ == '__main__':
 
     if args.env_name == 'pm':
         env = PointMass()
-    if args.env_name == 'pm2':
+    elif args.env_name == 'pm2':
         env = PointMass2()
-    elif  args.env_name == 'ckt-v0':
+    elif  args.env_name == 'ckt':
         env = CSAmp()
+    elif  args.env_name == 'ckt2':
+        env = CSAmp2()
     else:
         env = gym.make(args.env_name)
 

@@ -46,7 +46,7 @@ class PPO(object):
         self.optimizer = tf.train.AdamOptimizer()
 
 
-        self.min_timesteps_per_batch = 500
+        self.min_timesteps_per_batch = 1000
         self.max_path_length = 5
 
         self.num_grad_steps_per_target_update = 4

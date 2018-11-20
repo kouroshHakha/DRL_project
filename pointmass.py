@@ -44,11 +44,11 @@ class PointMass(Env):
     def reset(self):
         plt.close()
         self.state = np.array([self.goal_padding, self.goal_padding])
-        # self.state = np.random.randint(1,self.scale+1,size=[2,])
+        self.state = np.random.randint(1,self.scale+1,size=[2,])
         # state = self.state/self.scale
-        self.gob = np.array([1.0, 10.0])
-        # self.gob = np.random.randint(1,self.scale+1,size=[2,])
-        # self.gob = self.gob*1.0
+        # self.gob = np.array([10.0, 10.0])
+        self.gob = np.random.randint(1,self.scale+1,size=[2,])
+        self.gob = self.gob*1.0
         # self.gob = np.array([1-self.goal_padding/self.scale,1-self.goal_padding/self.scale])
         a0 = np.array([self.goal_padding, self.goal_padding])
         return self.state, self.gob, a0
@@ -70,7 +70,8 @@ class PointMass(Env):
         self.state = np.array([new_x, new_y])
         state = self.state/self.scale
 
-        if abs(new_x-self.gob[0]) <= 0 and abs(new_y-self.gob[1]) <= 0:
+        if abs(new_x-self.gob[0]) <= 1 and abs(new_y-self.gob[1]) <= 1:
+            # print("GOAL MET")
             reward = 10
         else:
             reg_term = -np.sum(abs(self.state - self.gob) / self.gob)

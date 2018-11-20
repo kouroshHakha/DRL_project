@@ -42,10 +42,10 @@ if __name__ == '__main__':
 
     if args.env_name == 'pm':
         env = PointMass()
-    elif args.env_name == 'pm2':
-        env = PointMass2()
     elif  args.env_name == 'ckt':
         env = CSAmp()
+    elif args.env_name == 'pm2':
+        env = PointMass2()
     elif  args.env_name == 'ckt2':
         env = CSAmp2()
     else:

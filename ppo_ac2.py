@@ -47,13 +47,16 @@ class PPO(object):
 
         self.learning_rate = computation_graph_args['learning_rate']
         self.optimizer = tf.train.AdamOptimizer(self.learning_rate)
+        self.l2reg = True
 
         self.number_of_trajectories_per_iter = 64
         self.max_path_length = 5
         self.min_timesteps_per_batch = self.max_path_length*self.ac_dim*self.number_of_trajectories_per_iter
 
-        self.num_grad_steps_per_target_update = 5
-        self.num_target_updates = 5
+        self.num_grad_steps_per_target_update = 4
+        self.num_target_updates = 4
+
+        self.random_goal = False
 
         num_epochs = 10
         self.num_ppo_updates = num_epochs*(self.number_of_trajectories_per_iter // self.mini_batch_size)
@@ -131,18 +134,19 @@ class PPO(object):
                                                                           initial_state=self.sy_actor_history_in,
                                                                           dtype=tf.float32)
 
+            sy_policy_params = build_mlp(self.lstm_out, 2, scope='out_policy', n_layers=2, hidden_dim=20)
             # sy_policy_params = tf.layers.dense(self.lstm_out, 2, activation=None, name='out_policy_fc')
-            # sy_policy_params = tf.reshape(sy_policy_params, [-1, 2])
-            # self.sy_ac_mean = sy_policy_params[:,:1]
-            # self.sy_ac_logstd = sy_policy_params[:,1:]
+            sy_policy_params = tf.reshape(sy_policy_params, [-1, 2])
+            self.sy_ac_mean = sy_policy_params[:,:1]
+            self.sy_ac_logstd = sy_policy_params[:,1:]
 
             # making std a trainable variable independent of inputs
-            self.sy_ac_mean = tf.layers.dense(self.lstm_out, 1, activation=None, name='out_policy_fc')
-            self.sy_ac_mean = tf.reshape(self.sy_ac_mean, [-1, 1])
-            sy_ac_logstd = tf.get_variable(shape=[1], dtype=tf.float32, name='log_std', trainable=True)
-            self.sy_ac_logstd = tf.fill(tf.shape(self.sy_ac_mean), 1.0)*sy_ac_logstd
+            # self.sy_ac_mean = tf.layers.dense(self.lstm_out, 1, activation=None, name='out_policy_fc')
+            # self.sy_ac_mean = tf.reshape(self.sy_ac_mean, [-1, 1])
+            # sy_ac_logstd = tf.get_variable(shape=[1], dtype=tf.float32, name='log_std', trainable=True)
+            # self.sy_ac_logstd = tf.fill(tf.shape(self.sy_ac_mean), 1.0)*sy_ac_logstd
 
-    def ppo_loss(self, new_log_probs, old_log_probs, advantages, clip_epsilon=0.1, entropy_coeff=0):
+    def ppo_loss(self, new_log_probs, old_log_probs, advantages, clip_epsilon=0.1, entropy_coeff=1e-4):
         """
         given:
             clip_epsilon
@@ -160,15 +164,21 @@ class PPO(object):
             ratio, clip_epsilon, advantages --> surr2
             surr1, surr2 --> policy_surr_loss
         """
-        ratio = tf.exp(new_log_probs - old_log_probs)
-        surr1 = ratio * advantages
-        surr2 = tf.clip_by_value(ratio, clip_value_min=1.0-clip_epsilon, clip_value_max=1.0+clip_epsilon) * advantages
-        policy_surr_loss = -tf.reduce_mean(tf.minimum(surr1, surr2))
+        self.ratio = tf.exp(new_log_probs - old_log_probs)
+        surr1 = self.ratio * advantages
+        surr2 = tf.clip_by_value(self.ratio, clip_value_min=1.0-clip_epsilon, clip_value_max=1.0+clip_epsilon) * advantages
+        self.policy_surr_loss = -tf.reduce_mean(tf.minimum(surr1, surr2))
+
 
         probs = tf.exp(new_log_probs)
-        entropy = tf.reduce_sum(-(new_log_probs * probs))
-        policy_surr_loss -= entropy_coeff * entropy
-        return policy_surr_loss
+        self.entropy = tf.reduce_sum(-(new_log_probs * probs)) * entropy_coeff
+
+        # debug
+        self.prob_ent = probs
+        self.log_prob_ent = new_log_probs
+        # self.entropy = tf.reduce_sum(self.ndist.entropy()) * entropy_coeff
+        policy_surr_total_loss = self.policy_surr_loss - self.entropy
+        return policy_surr_total_loss
 
     def _build_critic(self):
         with tf.variable_scope('critic'):
@@ -177,8 +187,9 @@ class PPO(object):
                                               # self.sy_re_prev,
                                               ], axis=-1)
 
+            critic_regul = tf.contrib.layers.l2_regularizer(1e-3) if self.l2reg else None
             sy_critic_meta_lstm_in = build_mlp(sy_critic_meta_state, self.state_dim, scope='input', n_layers=2,
-                                               hidden_dim=20, output_activation=tf.nn.relu)
+                                               hidden_dim=20, output_activation=tf.nn.relu, kernel_regularizer=critic_regul)
 
             lstm_cell = tf.nn.rnn_cell.LSTMCell(self.hist_dim, state_is_tuple=False, name='lstm')
             # lstm_out, self.updated_critic_history = lstm_cell(sy_critic_meta_lstm_in, self.sy_critic_history_in)
@@ -186,7 +197,7 @@ class PPO(object):
                                                                       inputs=sy_critic_meta_lstm_in,
                                                                       initial_state=self.sy_critic_history_in,
                                                                       dtype=tf.float32)
-            self.critic_prediction  = tf.squeeze(tf.layers.dense(lstm_out, 1, activation=None, name='out_fc'))
+            self.critic_prediction  = tf.squeeze(tf.layers.dense(lstm_out, 1, activation=None, name='out_fc', kernel_regularizer=critic_regul))
 
 
     def _build_log_prob(self):
@@ -199,9 +210,11 @@ class PPO(object):
         :return:
             sy_logprob: [None, ] -> [self.mini_batch_size, self.roll_out_h]
         """
-        mvn = tfp.distributions.MultivariateNormalDiag(loc=self.sy_ac_mean, scale_diag=tf.exp(self.sy_ac_logstd))
+        # self.mvn = tfp.distributions.MultivariateNormalDiag(loc=self.sy_ac_mean, scale_diag=tf.exp(self.sy_ac_logstd))
+        # sy_logprob = self.mvn.log_prob(sy_ac_in)
+        self.ndist = tfp.distributions.Normal(loc=self.sy_ac_mean, scale=tf.exp(self.sy_ac_logstd))
         sy_ac_in = tf.reshape(self.sy_ac, [tf.shape(self.sy_ac)[0] * tf.shape(self.sy_ac)[1], 1])
-        sy_logprob = mvn.log_prob(sy_ac_in)
+        sy_logprob = self.ndist.log_prob(sy_ac_in)
         return tf.reshape(sy_logprob, [tf.shape(self.sy_ac)[0], tf.shape(self.sy_ac)[1]])
 
     def _sample_action(self):
@@ -252,9 +265,9 @@ class PPO(object):
         sy_adv = tf.reshape(self.sy_adv, [-1,])
         sy_old_log_prob_n = tf.reshape(self.sy_old_log_prob_n, [-1,])
         sy_logprob = tf.reshape(self.sy_logprob, [-1,])
-        self.policy_surr_loss = self.ppo_loss(sy_logprob, sy_old_log_prob_n, sy_adv)
-        self.update_actor_op = self.optimizer.minimize(self.policy_surr_loss)
-        self.gradients = self.optimizer.compute_gradients(self.policy_surr_loss)
+        self.policy_total_loss = self.ppo_loss(sy_logprob, sy_old_log_prob_n, sy_adv)
+        self.update_actor_op = self.optimizer.minimize(self.policy_total_loss)
+        self.gradients = self.optimizer.compute_gradients(self.policy_total_loss)
 
     def sample_trajectories(self, animate_this_episode):
         # Collect paths until we have enough timesteps
@@ -276,10 +289,15 @@ class PPO(object):
         obs, next_obs, acs, ac_prevs, rewards, rewards_prev, terminal, input_histories = [], [], [], [], [], [], [], []
         env_ac = []
         means, stds = [], []
-        ob = self.env.reset()
+        if self.random_goal:
+            z_obs = []
+            z_end = np.random.uniform(0,1,2)
+            z_start = np.random.uniform(0,1,2)
+            ob = self.env.reset(z_start, z_end)
+        else: ob = self.env.reset()
         steps = 1
         ac_prev = -1
-        re_prev = -3
+        re_prev = -3 #self.env.worst_rew
         init_history = np.zeros([self.hist_dim*2])
 
         while True:
@@ -322,6 +340,8 @@ class PPO(object):
             rewards.append(rew)
             next_obs.append(next_ob)
             terminal.append(done)
+            if self.random_goal:
+                z_obs.append(z_end)
 
             means.append(mean[0,0])
             stds.append(np.exp(log_std[0,0]))
@@ -347,8 +367,20 @@ class PPO(object):
                 "terminal": np.array(terminal, dtype=np.float32),
                 "means": np.array(means, dtype=np.float32),
                 "stds": np.array(stds, dtype=np.float32),}
+        if self.random_goal:
+            path['z_obs'] = np.array(z_obs, dtype=np.float32)
         return path
+    def rtg(self, re):
+        assert re.ndim == 2
+        rtg = np.zeros(shape=re.shape)
+        for i in range(re.shape[1]):
+            rtg[:, i] = np.sum(re[:, i:], axis=1)
+        return rtg
 
+    def compute_q(self, re):
+        gamma_vector = np.power(self.gamma, range(re.shape[1]))
+        re_dicounted = re*gamma_vector
+        return self.rtg(re_dicounted)
 
     def estimate_advantage(self, ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, re_prev, ph_terminal):
         init_critic_history = np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32)
@@ -362,6 +394,8 @@ class PPO(object):
                                                                        self.sy_re_prev: re[:, :, None],
                                                                        self.sy_critic_history_in: next_h})
         q = re + self.gamma * next_values * (1-ph_terminal)
+
+        q = self.compute_q(re)
         # print('[debug] q:{}, re:{}, next_values:{}, ph_terminal:{}'.format(q.shape, re.shape, next_values.shape, ph_terminal.shape))
         curr_values = self.sess.run(self.critic_prediction, feed_dict={self.sy_ob: ph_ob,
                                                                        self.sy_ac_prev: ph_ac_prev[:,:, None],
@@ -372,6 +406,7 @@ class PPO(object):
         if self.normalize_advantages:
             adv = (adv - np.mean(adv.flatten())) / (np.std(adv.flatten()) + 1e-8)
         return adv
+        # return q
 
     def update_critic(self, ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, re_prev, ph_terminal):
         init_critic_history = np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32)
@@ -438,11 +473,15 @@ class PPO(object):
         #        print("-"*30)
         #        print("grad is None")
 
-        # l, = self.sess.run([self.policy_surr_loss], feed_dict=feed_dict)
-        # print("[Debug_training] l- {}".format(l))
+        # entropy, surr_loss, loss = self.sess.run([self.entropy, self.policy_surr_loss, self.policy_total_loss], feed_dict=feed_dict)
+        # print("[Debug_training] e- {}, surr_loss- {}, total_loss- {}".format(entropy, surr_loss, loss))
         self.sess.run([self.update_actor_op], feed_dict=feed_dict)
-        # l, = self.sess.run([self.policy_surr_loss], feed_dict=feed_dict)
-        # print("[Debug_training] l+ {}".format(l))
+        entropy, surr_loss, loss = self.sess.run([self.entropy, self.policy_surr_loss, self.policy_total_loss], feed_dict=feed_dict)
+        prob, log_prob = self.sess.run([self.prob_ent, self.log_prob_ent], feed_dict=feed_dict)
+        # print("[Debug_training] e+ {}, surr_loss+ {}, total_loss+ {}".format(entropy, surr_loss, loss))
+
+
+        return entropy, surr_loss, loss, prob, log_prob
 
 
     def train(self, n_iter, logdir):
@@ -463,6 +502,9 @@ class PPO(object):
 
             # obs_itr = np.empty(shape=[0,paths[0]['obs'].shape[1]], dtype=np.float32)
 
+            if self.random_goal:
+                ph_z_obs = np.stack([path['z_obs'] for path in paths], axis=0)
+
             ph_ob = np.stack([path['obs'] for path in paths], axis=0)
             ph_next_ob = np.stack([path['next_obs'] for path in paths], axis=0)
             re = np.stack([path['rew'] for path in paths], axis=0)
@@ -475,6 +517,7 @@ class PPO(object):
             ph_means = np.stack([path['means'] for path in paths], axis=0)
             ph_stds = np.stack([path['stds'] for path in paths], axis=0)
 
+
             ## check if means and stds are equal when policy is rolled out
             # ret_mean, ret_log_std = self.sess.run([self.sy_ac_mean, self.sy_ac_logstd], feed_dict={self.sy_ob: ph_ob,
             #                                                                                        self.sy_ac_prev: ph_ac_prev[:,:, None],
@@ -485,33 +528,39 @@ class PPO(object):
             # ret_log_std = np.reshape(ret_log_std, newshape=ph_stds.shape)
             # ret_std = np.exp(ret_log_std)
 
-            # # Log diagnostics
-            if self.env.__class__.__name__ == "PointMass":
-                obs_log = dict(
-                    ob=ph_ob,
-                )
-                with open(os.path.join(dirname, '{}.dpkl'.format(itr)), 'wb') as f:
-                    pickle.dump(obs_log, f)
-
             old_prob_nt = self.sess.run(self.sy_logprob, feed_dict={self.sy_ob: ph_ob,
                                                                     self.sy_ac_prev: ph_ac_prev[:,:,None],
                                                                     self.sy_re_prev: ph_re_prev[:, :, None],
                                                                     self.sy_actor_history_in: np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32),
                                                                     self.sy_ac: ph_ac[:,:,None],
                                                                     })
-            # if itr == 18:
+            # if itr >= 45:
             #     IPython.embed()
 
-            # ph_old_prob = np.reshape(old_prob_nt, newshape=[ph_ob.shape[0], ph_ob.shape[1]])
+            ph_old_prob = np.reshape(old_prob_nt, newshape=[ph_ob.shape[0], ph_ob.shape[1]])
             print("// taking gradient steps on critic ...")
             self.update_critic(ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, ph_re_prev, ph_terminal)
-            # if itr == 18:
-            #     IPython.embed()
+
             print("// getting new advantage estimates ...")
             ph_adv = self.estimate_advantage(ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, ph_re_prev, ph_terminal)
-            # IPython.embed()
+
+            # if itr >= 45:
+            #     IPython.embed()
 
             print("// taking gradient step on actor ...")
+            # sy_init_history = np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32)
+            # feed_dict = {
+            #     self.sy_ob: ph_ob,
+            #     self.sy_ac: ph_ac[:,:, None],
+            #     self.sy_ac_prev: ph_ac_prev[:,:, None],
+            #     self.sy_re_prev: ph_re_prev[:, :, None],
+            #     # self.sy_adv: adv,
+            #     self.sy_actor_history_in: sy_init_history,
+            #     self.sy_old_log_prob_n: old_prob_nt
+            # }
+            # ratio_minus = self.sess.run(self.ratio, feed_dict=feed_dict)
+            # ratio_minus = np.reshape(ratio_minus, [-1,])
+            # print('ratio_before_update:{}'.format(ratio_minus[43]))
             for _ in range(self.num_ppo_updates):
 
                 random_path_indices = np.random.choice(len(paths), self.mini_batch_size, replace=False)
@@ -522,41 +571,63 @@ class PPO(object):
                 re_prev = ph_re_prev[random_path_indices]
                 adv = ph_adv[random_path_indices]
                 old_log_prob = old_prob_nt[random_path_indices]
-                self.update_actor(ob, ac, ac_prev, re_prev, adv, old_log_prob)
+                ent, loss, total_loss, prob, log_prob = self.update_actor(ob, ac, ac_prev, re_prev, adv, old_log_prob)
+                # print("e:{}, l1:{}, tl:{}".format(ent,
+                #                                   loss,
+                #                                   total_loss))
 
-            new_prob = self.sess.run(self.sy_logprob, feed_dict={self.sy_ob: ph_ob,
-                                                                 self.sy_ac_prev: ph_ac_prev[:,:,None],
-                                                                 self.sy_re_prev: ph_re_prev[:, :, None],
-                                                                 self.sy_actor_history_in: np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32),
-                                                                 self.sy_ac: ph_ac[:,:,None],
-                                                                 })
 
-            print("-"*30+'// the index of trajectories which met goal at least once')
-            goal_met_trajectories = []
-            for i in range(len(paths)):
-                if 10.0 in paths[i]['rew']:
-                    goal_met_trajectories.append(i)
-            print(goal_met_trajectories)
-            traj_id_with_increased_prob = []
-            print("-"*30+'// the index of trajectories got higher probability after update')
-            for i in range(len(paths)):
-                if np.exp(np.sum(old_prob_nt[i])) <= np.exp(np.sum(new_prob[i])):
-                    traj_id_with_increased_prob.append(i)
-            print(traj_id_with_increased_prob)
-            print("-"*50+'// mean of ac, mean, and std')
+        # ratio_plus = self.sess.run(self.ratio, feed_dict=feed_dict)
+            # ratio_plus = np.reshape(ratio_plus, [-1,])
+            # print('ratio_after_update:{}'.format(ratio_plus[43]))
 
-            actions, action_means, action_stds = ph_ac.flatten(), ph_means.flatten(), ph_stds.flatten()
-            ac0, ac1 = [actions[k] for k in range(len(actions)) if k%2==0], [actions[k] for k in range(len(actions)) if k%2!=0]
-            mu0, mu1=  [action_means[k] for k in range(len(action_means)) if k%2==0], [action_means[k] for k in range(len(action_means)) if k%2!=0]
-            std0, std1=  [action_stds[k] for k in range(len(action_stds)) if k%2==0], [action_stds[k] for k in range(len(action_stds)) if k%2!=0]
-            print('mu0:{}'.format(np.mean(mu0)))
-            print('std0:{}'.format(np.mean(std0)))
-            print('ac0:{}'.format(np.mean(ac0)))
-            print('mu1:{}'.format(np.mean(mu1)))
-            print('std1:{}'.format(np.mean(std1)))
-            print('ac1:{}'.format(np.mean(ac1)))
-            # IPython.embed()
+            # if itr >= 45:
+            #     IPython.embed()
+            #
+            # new_prob = self.sess.run(self.sy_logprob, feed_dict={self.sy_ob: ph_ob,
+            #                                                      self.sy_ac_prev: ph_ac_prev[:,:,None],
+            #                                                      self.sy_re_prev: ph_re_prev[:, :, None],
+            #                                                      self.sy_actor_history_in: np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32),
+            #                                                      self.sy_ac: ph_ac[:,:,None],
+            #                                                      })
+            #
+            # print("-"*30+'// the index of trajectories which met goal at least once')
+            # goal_met_trajectories = []
+            # for i in range(len(paths)):
+            #     if 10.0 in paths[i]['rew']:
+            #         goal_met_trajectories.append(i)
+            # print(goal_met_trajectories)
+            # traj_id_with_increased_prob = []
+            # print("-"*30+'// the index of trajectories got higher probability after update')
+            # for i in range(len(paths)):
+            #     if np.exp(np.sum(old_prob_nt[i])) <= np.exp(np.sum(new_prob[i])):
+            #         traj_id_with_increased_prob.append(i)
+            # print(traj_id_with_increased_prob)
+            # print("-"*50+'// mean of ac, mean, and std')
+            #
+            # actions, action_means, action_stds = ph_ac.flatten(), ph_means.flatten(), ph_stds.flatten()
+            # ac0, ac1 = [actions[k] for k in range(len(actions)) if k%2==0], [actions[k] for k in range(len(actions)) if k%2!=0]
+            # mu0, mu1=  [action_means[k] for k in range(len(action_means)) if k%2==0], [action_means[k] for k in range(len(action_means)) if k%2!=0]
+            # std0, std1=  [action_stds[k] for k in range(len(action_stds)) if k%2==0], [action_stds[k] for k in range(len(action_stds)) if k%2!=0]
+            # print('mu0:{}'.format(np.mean(mu0)))
+            # print('std0:{}'.format(np.mean(std0)))
+            # print('ac0:{}'.format(np.mean(ac0)))
+            # print('mu1:{}'.format(np.mean(mu1)))
+            # print('std1:{}'.format(np.mean(std1)))
+            # print('ac1:{}'.format(np.mean(ac1)))
 
+            # # Log diagnostics
+            # if itr >= 43 and itr <= 47:
+            if self.env.__class__.__name__ == "PointMass":
+                # for visualization we need to append the last observation in ph_next_obs to ph_obs and
+                # repeat it ac_dim times to make it consistent with the other parts of the ph_obs array
+                # therefore, for example, for time horizon of 5 and action dimm of 2 there should be 12
+                # total time steps for visualization per batch
+                last_ob = [ph_next_ob[:,-1][:, None, :]]
+                ob = np.concatenate([ph_ob]+last_ob*self.ac_dim, axis=1)
+                obs_log = {'ob': ob}
+                with open(os.path.join(dirname, '{}.dpkl'.format(itr)), 'wb') as f:
+                    pickle.dump(obs_log, f)
 
             # KEERTANA
             returns = [path["rew"].sum() for path in paths]
@@ -573,5 +644,13 @@ class PPO(object):
             logz.log_tabular("TimestepsSoFar", total_timesteps)
             logz.dump_tabular()
             logz.pickle_tf_vars()
-
-
+            if itr > 1:
+                print('std: ',ph_stds[0])
+                print('mean: ',ph_means[0])
+                print('ac: ',ph_ac[0])
+                print('ent:', ent)
+                print('loss:', loss)
+                print('t_loss:', total_loss)
+                print('prob:', prob[:10])
+                print('log_prob:', log_prob[:10])
+            #     IPython.embed()

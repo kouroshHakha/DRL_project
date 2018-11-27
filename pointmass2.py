@@ -12,6 +12,7 @@ import pickle
 import IPython
 import time
 import scipy.ndimage
+import math
 
 class Env(object):
     def __init__(self):
@@ -39,20 +40,22 @@ class PointMass(Env):
             low=np.array([-np.inf, -np.inf]),
             high=np.array([np.inf, np.inf]))
         self.goal_padding = goal_padding
+        self.worst_rew = -40
         self.spec = EnvSpec(id='PointMass-v0', max_episode_steps=int(max_episode_steps_coeff*self.scale))
 
-    def reset(self):
+    def reset(self, z_start=None, z_end=None):
         plt.close()
-        self.state = np.array([self.goal_padding, self.goal_padding])
-        # self.state = np.random.randint(1,self.scale+1,size=[2,])
-        # state = self.state/self.scale
-        self.gob = np.array([18.0, 18.0])
-        # self.gob = np.random.randint(1,self.scale+1,size=[2,])
-        # self.gob = self.gob*1.0
-        # self.gob = np.array([1-self.goal_padding/self.scale,1-self.goal_padding/self.scale])
-        # a0 = np.array([self.goal_padding, self.goal_padding])
+
+        if z_start is None:
+            self.state = np.array([self.goal_padding, self.goal_padding])
+        else:
+            self.state = (np.floor(z_start * self.scale) + 1) * 1.0
+        if z_end is None:
+            self.gob = np.array([15.0, 5.0])
+        else:
+            self.gob = (np.floor(z_end * self.scale) + 1) * 1.0
+
         return np.concatenate([self.state, self.gob])
-        # return np.concatenate([self.state/self.scale, self.gob/self.scale])
 
     def step(self, action):
         x, y = action
@@ -72,7 +75,7 @@ class PointMass(Env):
         state = self.state/self.scale
 
         if abs(new_x-self.gob[0]) <= 1 and abs(new_y-self.gob[1]) <= 1:
-            print("goal met")
+            # print("goal met")
             reward = 10
         else:
             reg_term = -np.sum(abs(self.state - self.gob) / self.gob)
@@ -128,12 +131,12 @@ class PointMass(Env):
         with open(fname, 'rb') as f:
             data = pickle.load(f)
             ob_array = data['ob']
-            # gob_array = data['golden_ob']
-        ob_array = np.reshape(ob_array, newshape=[-1,self.observation_space.shape[0]]) / self.scale
-        ob_array = ob_array[:,:2]
-        gob_array = np.stack([self.gob for _ in range(len(ob_array))], axis=0)/ self.scale
 
-        ob_indices = np.array([int(self.preprocess(s)) for s in ob_array])
+        ob_array = np.reshape(ob_array, newshape=[-1,self.observation_space.shape[0]]) / self.scale
+        first_ob_array = ob_array[:,:2]
+        gob_array = ob_array[:, 2:]
+
+        ob_indices = np.array([int(self.preprocess(s)) for s in first_ob_array])
         gob_indices = np.array([int(self.preprocess(s)) for s in gob_array])
 
         images = []
@@ -141,7 +144,7 @@ class PointMass(Env):
         for cnt, i, j in zip(range(len(ob_indices)), ob_indices, gob_indices):
             a = np.zeros(int(self.grid_size))
             a[i] = 1
-            a[j]=0.5
+            a[j]= 0.5
             a = np.reshape(a, (self.scale, self.scale))
             a = scipy.ndimage.zoom(a, 200//self.scale, order=0)
             images.append(a)
@@ -168,7 +171,7 @@ class PointMass(Env):
                 continue
             iters = [s for s in os.listdir(path) if s.endswith(".dpkl")]
             for i in tqdm(range(len(iters))):
-                self.visualize(i, os.path.join(dirname, s + '/'+ str(iters[i])))
+                self.visualize(iters[i], os.path.join(dirname, s + '/'+ str(iters[i])))
                 # self.create_gif(os.path.join(dirname, str(s)))
 
 def debug():

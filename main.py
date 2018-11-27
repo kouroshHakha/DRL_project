@@ -17,7 +17,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('env_name', type=str)
-    parser.add_argument('agent', type=str, default='vpg | ac | ppo')
+    parser.add_argument('agent', type=str, default='vpg | ac | ppo | ppo2')
     parser.add_argument('--exp_name', type=str, default='rnn')
     parser.add_argument('--n_iter', '-n', type=int, default=100)
     parser.add_argument('--reward_to_go', '-rtg', action='store_true')

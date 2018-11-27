@@ -46,12 +46,13 @@ def build_mlp(input_layer,
               hidden_dim=500,
               activation=tf.nn.relu,
               output_activation=None,
-              reuse=False):
+              reuse=False,
+              kernel_regularizer=None):
     layer = input_layer
     with tf.variable_scope(scope, reuse=reuse):
         for _ in range(n_layers):
-            layer = tf.layers.dense(layer, hidden_dim, activation=activation)
-        layer = tf.layers.dense(layer, output_dim, activation=output_activation)
+            layer = tf.layers.dense(layer, hidden_dim, activation=activation, kernel_regularizer=kernel_regularizer)
+        layer = tf.layers.dense(layer, output_dim, activation=output_activation, kernel_regularizer=kernel_regularizer)
     return layer
 
 def print_debug(name, value):

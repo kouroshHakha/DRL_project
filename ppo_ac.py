@@ -55,7 +55,7 @@ class PPO(object):
 
 
         self.number_of_trajectories_per_iter = self.mini_batch_size
-        self.max_path_length = 5
+        self.max_path_length = 30
         self.min_timesteps_per_batch = self.max_path_length*self.number_of_trajectories_per_iter
 
 
@@ -67,6 +67,8 @@ class PPO(object):
         num_epochs = 3
         self.num_ppo_updates = num_epochs*(self.number_of_trajectories_per_iter // self.mini_batch_size)
 
+        self.use_lstm = True
+        self.hist_dim = 2*self.hist_dim if self.use_lstm else self.hist_dim
 
 
         self.gamma = pg_flavor_args['gamma']
@@ -93,14 +95,14 @@ class PPO(object):
         self.sy_ac = tf.placeholder(dtype=tf.float32, shape=[None, None,  self.ac_dim])
         self.sy_ac_prev = tf.placeholder(dtype=tf.float32, shape=[None, None, self.ac_dim])
         self.sy_adv = tf.placeholder(dtype=tf.float32, shape=[None, None, ])
-        self.sy_init_history = tf.placeholder(dtype=tf.float32, shape=[None, self.hist_dim*2])
+        self.sy_init_history = tf.placeholder(dtype=tf.float32, shape=[None, self.hist_dim]) #*2
         self.sy_re_prev = tf.placeholder(dtype=tf.float32, shape=[None, None, 1])
 
     ####################################################################################
         ##### Critic
         ####################################################################################
         self.sy_target_values = tf.placeholder(dtype=tf.float32, shape=[None, None,])
-        self.init_critic_history = tf.placeholder(dtype=tf.float32, shape=[None, self.hist_dim*2])
+        self.init_critic_history = tf.placeholder(dtype=tf.float32, shape=[None, self.hist_dim]) #*2
 
         ####################################################################################
         ##### PPO
@@ -127,7 +129,11 @@ class PPO(object):
             self.sy_meta_lstm_in = build_mlp(self.sy_meta_state, self.state_dim, scope='input', n_layers=2, hidden_dim=20, output_activation=tf.nn.relu)
 
             #Create LSTM cells of length batch_size
-            self.lstm_cell = tf.nn.rnn_cell.LSTMCell(self.hist_dim, state_is_tuple=False, name='lstm')
+            if self.use_lstm:
+                self.lstm_cell = tf.nn.rnn_cell.LSTMCell(self.hist_dim//2, state_is_tuple=False, name='lstm')
+            else:
+                self.lstm_cell = tf.nn.rnn_cell.GRUCell(self.hist_dim, activation=tf.tanh, name='gru')
+
             self.lstm_out, self.updated_actor_history = tf.nn.dynamic_rnn(cell=self.lstm_cell,
                                                             inputs=self.sy_meta_lstm_in,
                                                             initial_state=self.sy_init_history,
@@ -187,8 +193,11 @@ class PPO(object):
 
             sy_critic_meta_lstm_in = build_mlp(sy_critic_meta_state, self.state_dim, scope='input', n_layers=2,
                                                hidden_dim=20, output_activation=tf.nn.relu, kernel_regularizer=critic_regul)
+            if self.use_lstm:
+                lstm_cell = tf.nn.rnn_cell.LSTMCell(self.hist_dim//2, state_is_tuple=False, name='lstm')
+            else:
+                lstm_cell = tf.nn.rnn_cell.GRUCell(self.hist_dim, activation=tf.tanh, name='gru')
 
-            lstm_cell = tf.nn.rnn_cell.LSTMCell(self.hist_dim, state_is_tuple=False, name='lstm')
             lstm_out, self.critic_history = tf.nn.dynamic_rnn(cell=lstm_cell,
                                                               inputs=sy_critic_meta_lstm_in,
                                                               initial_state=self.init_critic_history,
@@ -300,7 +309,7 @@ class PPO(object):
         steps = 1
         ac_prev = np.ones([1,1,self.ac_dim])*(1)
         re_prev = -3 #self.env.worst_rew
-        init_history = np.zeros([self.hist_dim*2])
+        init_history = np.zeros([self.hist_dim])#*2
 
         while True:
             if animate_this_episode:
@@ -385,7 +394,7 @@ class PPO(object):
         return rtg
 
     def estimate_advantage(self, ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, re_prev, ph_terminal):
-        init_critic_history = np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32)
+        init_critic_history = np.zeros([ph_ob.shape[0], self.hist_dim], dtype=np.float32) #*2
         # next_h = self.sess.run(self.updated_critic_history, feed_dict={self.sy_ob: ph_ob[:, 0, :][:, None, :],
         #                                                                self.sy_ac_prev: ph_ac_prev[:, 0][:, None, None],
         #                                                                self.sy_re_prev: re_prev[:, 0][:, None, None],
@@ -414,7 +423,7 @@ class PPO(object):
         # return adv
 
     def update_critic(self, ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, re_prev, ph_terminal, ph_q):
-        init_critic_history = np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32)
+        init_critic_history = np.zeros([ph_ob.shape[0], self.hist_dim], dtype=np.float32) #*2
         for i in range(self.num_grad_steps_per_target_update * self.num_target_updates):
             next_h = self.sess.run(self.critic_history, feed_dict={self.sy_ob: ph_ob[:, 0, :][:, None, :],
                                                                            self.sy_ac_prev: ph_ac_prev[:, 0][:, None],
@@ -435,7 +444,7 @@ class PPO(object):
                                                self.init_critic_history: init_critic_history,
                                                self.sy_target_values: target_n})
 
-            # init_critic_history = np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32)
+            # init_critic_history = np.zeros([ph_ob.shape[0], self.hist_dim], dtype=np.float32) #*2
             # for _ in range(10):
             #     _, loss = self.sess.run([self.critic_update_op, self.critic_loss],
             #                             feed_dict={self.sy_ob: ph_ob,
@@ -462,7 +471,7 @@ class PPO(object):
 
         #if self.nn_baseline:
         #raise NotImplementedError
-        sy_init_history = np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32)
+        sy_init_history = np.zeros([ph_ob.shape[0], self.hist_dim], dtype=np.float32) #*2
         # sy_seq_len = np.zeros([self.mini_batch_size, ], dtype=np.int32)
 
         feed_dict = {
@@ -545,7 +554,7 @@ class PPO(object):
             old_prob_nt = self.sess.run(self.sy_logprob, feed_dict={self.sy_ob: ph_ob,
                                                                     self.sy_ac_prev: ph_ac_prev,
                                                                     self.sy_re_prev: ph_re_prev[:, :, None],
-                                                                    self.sy_init_history: np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32),
+                                                                    self.sy_init_history: np.zeros([ph_ob.shape[0], self.hist_dim], dtype=np.float32), #*2
                                                                     self.sy_ac: ph_ac,
                                                                     })
             # if itr >= 45:

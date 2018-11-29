@@ -28,6 +28,7 @@ parser.add_argument('--alg', type=str, choices=['vpg', 'ppo'], default='vpg',
                     help='Which algorithm to use to train the agent')
 parser.add_argument('--logstd', type=float, default=0, help='initial_logstd')
 # parser.add_argument('--seed', '-s', type=int, default=10)
+parser.add_argument('--mobj', type=bool, default=False, help='multiple objectives')
 
 args = parser.parse_args()
 
@@ -41,9 +42,15 @@ if not(os.path.exists(logdir)):
 
 
 if args.env == 'pm3':
-    env = PointMass_v3()
-elif args.env == 'pm4':
-    env = PointMass_v4()
+    if args.mobj == True:
+        env = PointMass_v3(multi_goal=True)
+    else:
+        env = PointMass_v3()
+if args.env == 'pm4':
+    if args.mobj == True:
+        env = PointMass_v4(multi_goal=True)
+    else: 
+        env = PointMass_v4()
 else:
     env = gym.make(args.env)
 
@@ -122,5 +129,4 @@ for t in itertools.count():
     np.save('-'.join([args.env, args.policy, args.alg, 'logstd=' + str(args.logstd)]) + '.npy', np.array(all_rewards))
     if t > 1500:
         break
-
 

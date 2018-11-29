@@ -36,7 +36,7 @@ class PointMass(Env):
             low=np.array([0.0, 0.0, -5.0, -5.0]),
             high=np.array([1.0, 1.0, 5.0, 5.0]))
         self.action_space = gym.spaces.Discrete(6)
-        self.action_meaning = [-5,-3,-1,1,3,5]
+        self.action_meaning = [-5,-3,-1,0,1,3,5]
         self.boundary = [10,40, 20, 25]
         self.spec = EnvSpec(id='PointMass-v3', max_episode_steps=int(max_episode_steps_coeff*self.scale))
 
@@ -69,7 +69,7 @@ class PointMass(Env):
             if self.boundary[0] <= new_x and new_x <= self.boundary[1] and self.boundary[2] < new_y and new_y < self.boundary[3]:
                 reward = 10
             else:
-                reward = 0
+                reward = -1
 
             # done
             done = False

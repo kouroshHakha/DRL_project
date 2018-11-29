@@ -12,6 +12,7 @@ import pickle
 import IPython
 import time
 import scipy.ndimage
+import random
 
 class Env(object):
     def __init__(self):
@@ -27,24 +28,31 @@ class Env(object):
         raise NotImplementedError
 
 class PointMass(Env):
-    def __init__(self, max_episode_steps_coeff=1, scale=50, goal_padding=2.0):
+    def __init__(self, max_episode_steps_coeff=1, scale=50, goal_padding=2.0, multi_goal=False):
         super(PointMass, self).__init__()
         # define scale such that the each square in the grid is 1 x 1
         self.scale = int(scale)
         self.grid_size = self.scale * self.scale
+        self.multi_goal = multi_goal
         self.observation_space = gym.spaces.Box(
-            low=np.array([0.0, 0.0, -5.0, -5.0]),
-            high=np.array([1.0, 1.0, 5.0, 5.0]))
-        self.action_space = gym.spaces.Discrete(6)
+            low=np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -5.0, -5.0]),
+            high=np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 5.0, 5.0]))
+        self.action_space = gym.spaces.Discrete(7)
         self.action_meaning = [-5,-3,-1,0,1,3,5]
-        self.boundary = [10,40, 20, 25]
+        self.boundaries = [[2, 8, 1, 4], [44, 47, 1, 7], [30, 36, 35, 38], [2,8,44,50]]
+        self.fixed_goal_idx = 0
         self.spec = EnvSpec(id='PointMass-v3', max_episode_steps=int(max_episode_steps_coeff*self.scale))
 
     def reset(self):
         plt.close()
         self.env_action = []
         self.state = np.array([5,40])
-        self.ob = np.concatenate([self.state, np.zeros(2)])
+        if self.multi_goal == False:
+            self.boundary = self.boundaries[self.fixed_goal_idx]
+        else:
+            self.changing_goal_idx = random.randint(0,len(self.boundaries)-1)
+            self.boundary = self.boundaries[self.changing_goal_idx]
+        self.ob = np.concatenate([self.state, self.boundary, np.zeros(2)])
         return self.ob
 
     def step(self, action):
@@ -57,12 +65,12 @@ class PointMass(Env):
             new_y = self.state[1]+y
             if new_x < 0:
                 new_x = 0
-            if new_x > self.scale:
-                new_x = self.scale
+            if new_x > self.scale-1:
+                new_x = self.scale-1
             if new_y < 0:
                 new_y = 0
-            if new_y > self.scale:
-                new_y = self.scale
+            if new_y > self.scale-1:
+                new_y = self.scale-1
             self.state = np.array([new_x, new_y])
             state = self.state/self.scale
 
@@ -73,7 +81,7 @@ class PointMass(Env):
 
             # done
             done = False
-            self.ob = np.concatenate([self.state, np.array(self.env_action)])
+            self.ob = np.concatenate([self.state, self.boundary, np.array([x,y])])
             self.env_action = []
             return self.ob, reward, done, None
         else:
@@ -125,17 +133,17 @@ class PointMass(Env):
             data = pickle.load(f)
             ob_array = data['ob']
 
-        ob_array = np.reshape(ob_array, newshape=[-1,self.observation_space.shape[0]]) / self.scale
-        first_ob_array = ob_array[:,:2]
-
-        ob_indices = np.array([int(self.preprocess(s)) for s in first_ob_array])
+        ob_array = np.reshape(ob_array, newshape=[-1,self.observation_space.shape[0]])
+        first_ob_array = ob_array[:,:2].astype(np.int)
+        boundary = ob_array[:, 2:6].astype(np.int)
+        # ob_indices = np.array([int(self.preprocess(s)) for s in first_ob_array])
 
         images = []
-        for cnt, i in zip(range(len(ob_indices)), ob_indices):
-            a = np.zeros(int(self.grid_size))
-            a[i] = 1
-            a = np.reshape(a, (self.scale, self.scale))
-            a[self.boundary[0]:self.boundary[1], self.boundary[2]:self.boundary[3]]= 0.5
+        # for cnt, i in zip(range(len(ob_indices)), ob_indices):
+        for i in range(len(ob_array)):
+            a = np.zeros(shape=[self.scale, self.scale])
+            a[first_ob_array[i,0], first_ob_array[i,1]] = 1
+            a[boundary[i,0]:boundary[i,1], boundary[i,2]:boundary[i,3]]= 0.5
             a = scipy.ndimage.zoom(a, 50//self.scale, order=0)
             images.append(a)
 

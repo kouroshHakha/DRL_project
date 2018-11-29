@@ -12,6 +12,7 @@ import pickle
 import IPython
 import time
 import scipy.ndimage
+import random
 
 class Env(object):
     def __init__(self):
@@ -27,23 +28,30 @@ class Env(object):
         raise NotImplementedError
 
 class PointMass(Env):
-    def __init__(self, max_episode_steps_coeff=1, scale=50, goal_padding=2.0):
+    def __init__(self, max_episode_steps_coeff=1, scale=50, goal_padding=2.0, multi_goal=False):
         super(PointMass, self).__init__()
         # define scale such that the each square in the grid is 1 x 1
         self.scale = int(scale)
         self.grid_size = self.scale * self.scale
+        self.multi_goal = multi_goal
         self.observation_space = gym.spaces.Box(
             low=np.array([0.0, 0.0, -5.0, -5.0]),
             high=np.array([1.0, 1.0, 5.0, 5.0]))
         self.action_space = gym.spaces.Discrete(48)
         self.action_meaning = [-5,-3,-1,0,1,3,5]
-        self.boundary = [10, 40, 20, 25]
+        self.boundaries = [[2, 8, 1, 4], [44, 47, 1, 7], [30,36, 35, 38], [2,8,44,50]]
+        self.fixed_goal_idx = random.randint(0,len(self.boundaries)-1)
         self.spec = EnvSpec(id='PointMass-v4', max_episode_steps=int(max_episode_steps_coeff*self.scale))
 
     def reset(self):
         plt.close()
         self.env_action = []
         self.state = np.array([5,40])
+        if self.multi_goal == False:
+            self.boundary = self.boundaries[self.fixed_goal_idx]
+        else:
+            self.changing_goal_idx = random.randint(0,len(self.boundaries)-1)
+            self.boundary = self.boundaries[self.changing_goal_idx]
         self.ob = np.concatenate([self.state, np.zeros(2)])
         return self.ob
 
@@ -64,7 +72,7 @@ class PointMass(Env):
         self.state = np.array([new_x, new_y])
         state = self.state/self.scale
 
-        if (self.boundary[0] <= new_x) and (new_x <= self.boundary[1]) and (self.boundary[2] <= new_y) and (new_y < self.boundary[3]):
+        if (self.boundary[0] <= new_x) and (new_x <= self.boundary[1]) and (self.boundary[2] <= new_y) and (new_y <= self.boundary[3]):
             reward = 10
         else:
             reward = -1

@@ -15,6 +15,11 @@ from rinokeras.train import TrainGraph
 from pointmass3 import PointMass as PointMass_v3
 from pointmass4 import PointMass as PointMass_v4
 
+import pickle
+import os
+import time
+import IPython
+
 parser = argparse.ArgumentParser('Rinokeras RL Example Script')
 parser.add_argument('--env', type=str, default='pm', help='Which gym environment to run on')
 parser.add_argument('--policy', type=str, choices=['standard', 'lstm'], default='standard',
@@ -22,14 +27,30 @@ parser.add_argument('--policy', type=str, choices=['standard', 'lstm'], default=
 parser.add_argument('--alg', type=str, choices=['vpg', 'ppo'], default='vpg',
                     help='Which algorithm to use to train the agent')
 parser.add_argument('--logstd', type=float, default=0, help='initial_logstd')
+# parser.add_argument('--seed', '-s', type=int, default=10)
+
 args = parser.parse_args()
+
+# setup the log folder
+if not(os.path.exists('data')):
+    os.makedirs('data')
+logdir = 'rinokeras' + '_' + args.env + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
+logdir = os.path.join('data', logdir + '/0')
+if not(os.path.exists(logdir)):
+    os.makedirs(logdir)
+
 
 if args.env == 'pm3':
     env = PointMass_v3()
-if args.env == 'pm4':
+elif args.env == 'pm4':
     env = PointMass_v4()
 else:
     env = gym.make(args.env)
+
+# initialize random seed
+# np.random.seed(args.seed)
+# tf.set_random_seed(args.seed)
+# env.seed(args.seed)
 
 policies = {
     'standard': StandardPolicy,
@@ -58,7 +79,8 @@ policy = policies[args.policy](
     action_shape, 'discrete' if discrete else 'continuous', embedding_model, model_dim,
     initial_logstd=args.logstd, n_layers_logits=1, n_layers_value=1, take_greedy_actions=False)
 
-experiment = algorithms[args.alg](policy, distribution_strategy=tf.contrib.distribute.OneDeviceStrategy('/cpu:0'))
+experiment = algorithms[args.alg](policy, distribution_strategy=tf.contrib.distribute.OneDeviceStrategy('/cpu:0'),
+                                  entcoeff=0)
 graph = TrainGraph.from_experiment(experiment, (obs_ph, act_ph, val_ph, seqlen_ph))
 
 runner = PGEnvironmentRunner(env, policy, gamma, max_episode_steps=50)
@@ -86,10 +108,16 @@ for t in itertools.count():
     current_episode_num = runner.episode_num
 
     printstr = []
+    printstr.append('TIME: {:>4}'.format(t))
     printstr.append('EPISODE: {:>7}'.format(current_episode_num))
     printstr.append('MEAN REWARD: {:>6.1f}'.format(mean_episode_reward))
     printstr.append('MEAN EPISODE STEPS: {:>5}'.format(mean_episode_steps))
     print(', '.join(printstr))
+
+    if  env.__class__.__name__ == "PointMass":
+        obs_log = {'ob': batch_rollout.obs}
+        with open(os.path.join(logdir, '{}.dpkl'.format(t)), 'wb') as f:
+            pickle.dump(obs_log, f)
 
     if t > 1500:
         break

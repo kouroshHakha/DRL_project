@@ -69,7 +69,7 @@ class PointMass(Env):
             if self.boundary[0] <= new_x and new_x <= self.boundary[1] and self.boundary[2] < new_y and new_y < self.boundary[3]:
                 reward = 10
             else:
-                reward = -1
+                reward = 0
 
             # done
             done = False
@@ -134,8 +134,8 @@ class PointMass(Env):
         for cnt, i in zip(range(len(ob_indices)), ob_indices):
             a = np.zeros(int(self.grid_size))
             a[i] = 1
-            a[self.boundary[0]:self.boundary[1], self.boundary[2]:self.boundary[3]]= 0.5
             a = np.reshape(a, (self.scale, self.scale))
+            a[self.boundary[0]:self.boundary[1], self.boundary[2]:self.boundary[3]]= 0.5
             a = scipy.ndimage.zoom(a, 50//self.scale, order=0)
             images.append(a)
 

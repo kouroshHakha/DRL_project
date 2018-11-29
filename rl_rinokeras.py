@@ -126,7 +126,7 @@ for t in itertools.count():
         with open(os.path.join(logdir, '{}.dpkl'.format(t)), 'wb') as f:
             pickle.dump(obs_log, f)
 
-    np.save('-'.join([args.env, args.policy, args.alg, 'logstd=' + str(args.logstd)]) + '.npy', np.array(all_rewards))
+    np.save('-'.join([args.env, args.policy, args.alg, 'logstd=' + str(args.logstd) + '-mobj=' + str(args.mobj)]) + '.npy', np.array(all_rewards))
     if t > 1500:
         break
 

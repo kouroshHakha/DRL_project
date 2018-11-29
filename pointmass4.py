@@ -52,7 +52,7 @@ class PointMass(Env):
         else:
             self.changing_goal_idx = random.randint(0,len(self.boundaries)-1)
             self.boundary = self.boundaries[self.changing_goal_idx]
-        self.ob = np.concatenate([self.state, np.zeros(2)])
+        self.ob = np.concatenate([self.state, self.boundary, np.zeros(2)])
         return self.ob
 
     def step(self, action):
@@ -79,9 +79,8 @@ class PointMass(Env):
 
         # done
         done = False
-        self.ob = np.concatenate([self.state, np.array([x,y])])
+        self.ob = np.concatenate([self.state, self.boundary, np.array([x,y])])
         self.env_action = []
-        #print(self.ob, reward, done)
         return self.ob, reward, done, None
 
     def preprocess(self, state):

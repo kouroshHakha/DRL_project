@@ -35,8 +35,8 @@ class PointMass(Env):
         self.observation_space = gym.spaces.Box(
             low=np.array([0.0, 0.0, -5.0, -5.0]),
             high=np.array([1.0, 1.0, 5.0, 5.0]))
-        self.action_space = gym.spaces.Discrete(36)
-        self.action_meaning = [-5,-3,-1,1,3,5]
+        self.action_space = gym.spaces.Discrete(48)
+        self.action_meaning = [-5,-3,-1,0,1,3,5]
         self.boundary = [10, 40, 20, 25]
         self.spec = EnvSpec(id='PointMass-v4', max_episode_steps=int(max_episode_steps_coeff*self.scale))
 
@@ -48,8 +48,8 @@ class PointMass(Env):
         return self.ob
 
     def step(self, action):
-        x = self.action_meaning[int(action // 6)]
-        y = self.action_meaning[int(action % 6)]
+        x = self.action_meaning[int(action // 7)]
+        y = self.action_meaning[int(action % 7)]
         # next state
         new_x = self.state[0]+x
         new_y = self.state[1]+y
@@ -64,7 +64,7 @@ class PointMass(Env):
         self.state = np.array([new_x, new_y])
         state = self.state/self.scale
 
-        if self.boundary[0] <= new_x and new_x <= self.boundary[1] and self.boundary[2] < new_y and new_y < self.boundary[3]:
+        if (self.boundary[0] <= new_x) and (new_x <= self.boundary[1]) and (self.boundary[2] <= new_y) and (new_y < self.boundary[3]):
             reward = 10
         else:
             reward = -1
@@ -73,7 +73,7 @@ class PointMass(Env):
         done = False
         self.ob = np.concatenate([self.state, np.array([x,y])])
         self.env_action = []
-        print(self.ob, reward, done)
+        #print(self.ob, reward, done)
         return self.ob, reward, done, None
 
     def preprocess(self, state):

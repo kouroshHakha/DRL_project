@@ -55,14 +55,14 @@ class PPO(object):
 
 
         self.number_of_trajectories_per_iter = self.mini_batch_size
-        self.max_path_length = 30
+        self.max_path_length = 5
         self.min_timesteps_per_batch = self.max_path_length*self.number_of_trajectories_per_iter
 
 
         self.num_grad_steps_per_target_update = 4
         self.num_target_updates = 4
 
-        self.random_goal = False
+        self.random_goal = True
 
         num_epochs = 3
         self.num_ppo_updates = num_epochs*(self.number_of_trajectories_per_iter // self.mini_batch_size)
@@ -146,7 +146,7 @@ class PPO(object):
 
             return sy_ac_mean, sy_ac_logstd
 
-    def ppo_loss(self, new_log_probs, old_log_probs, advantages, clip_epsilon=0.1, entropy_coeff=0):
+    def ppo_loss(self, new_log_probs, old_log_probs, advantages, clip_epsilon=0.2, entropy_coeff=0):
         """
         given:
             clip_epsilon
@@ -175,13 +175,14 @@ class PPO(object):
         surr2 = tf.clip_by_value(ratio, clip_value_min=1.0-clip_epsilon, clip_value_max=1.0+clip_epsilon) * advantages
         self.policy_surr_loss = -tf.reduce_mean(tf.minimum(surr1, surr2))
 
-        probs = tf.exp(new_log_probs)
-        self.entropy = tf.reduce_sum(-(new_log_probs * probs)) * entropy_coeff
+        # probs = tf.exp(new_log_probs)
+        # self.entropy = tf.reduce_sum(-(new_log_probs * probs)) * entropy_coeff
+
+        self.entropy = tf.reduce_sum(self.mvn.entropy()) * entropy_coeff
 
         # debug
-        self.prob_ent = probs
+        self.prob_ent = tf.exp(new_log_probs)
         self.log_prob_ent = new_log_probs
-        # self.entropy = tf.reduce_sum(self.ndist.entropy()) * entropy_coeff
         policy_surr_total_loss = self.policy_surr_loss - self.entropy
         return policy_surr_total_loss
 
@@ -221,9 +222,9 @@ class PPO(object):
             sy_logprob: [None, ] -> [self.mini_batch_size * self.roll_out_h]
         """
         sy_mean, sy_logstd = policy_parameters
-        mvn = tfp.distributions.MultivariateNormalDiag(loc=sy_mean, scale_diag=tf.exp(sy_logstd))
+        self.mvn = tfp.distributions.MultivariateNormalDiag(loc=sy_mean, scale_diag=tf.exp(sy_logstd))
         sy_ac_in = tf.reshape(sy_ac, [tf.shape(sy_ac)[0] * tf.shape(sy_ac)[1], self.ac_dim])
-        sy_logprob = mvn.log_prob(sy_ac_in)
+        sy_logprob = self.mvn.log_prob(sy_ac_in)
         # return sy_logprob
         return tf.reshape(sy_logprob, [tf.shape(self.sy_ac)[0], tf.shape(self.sy_ac)[1]])
 
@@ -562,12 +563,12 @@ class PPO(object):
             ph_old_prob = np.reshape(old_prob_nt, newshape=[ph_ob.shape[0], ph_ob.shape[1]])
 
 
-            ph_q = None
-            print("// taking gradient steps on critic ...")
-            self.update_critic(ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, ph_re_prev, ph_terminal, ph_q)
-
+            # ph_q = None
             print("// getting new advantage estimates ...")
             ph_adv, ph_q = self.estimate_advantage(ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, ph_re_prev, ph_terminal)
+
+            print("// taking gradient steps on critic ...")
+            self.update_critic(ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, ph_re_prev, ph_terminal, ph_q)
 
             for _ in range(self.num_ppo_updates):
 
@@ -580,6 +581,7 @@ class PPO(object):
                 adv = ph_adv[random_path_indices]
                 old_log_prob = old_prob_nt[random_path_indices]
                 ent, loss, total_loss, prob, log_prob = self.update_actor(ob, ac, ac_prev, re_prev, adv, old_log_prob)
+
 
             # # Log diagnostics
             if self.env.__class__.__name__ == "PointMass":
@@ -602,6 +604,9 @@ class PPO(object):
                 print('q:', ph_q[0])
                 print('adv:', ph_adv[0])
                 print('cur_val:', ph_q[0] - ph_adv[0])
+                print('ent:', ent)
+                print('loss:', loss)
+                print('t_loss:', total_loss)
 
             # KEERTANA
             returns = [path["rew"].sum() for path in paths]

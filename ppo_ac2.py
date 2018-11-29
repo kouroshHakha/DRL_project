@@ -12,6 +12,13 @@ import logz
 import time
 import IPython
 import pickle
+import scipy.signal
+
+def batch_norm(a, mean, std):
+    return (a - mean) / (std + 1e-8)
+
+def batch_denorm(a, mean, std):
+    return a*std + mean
 
 def pathlength(path):
     return len(path["rew"])
@@ -47,9 +54,9 @@ class PPO(object):
 
         self.learning_rate = computation_graph_args['learning_rate']
         self.optimizer = tf.train.AdamOptimizer(self.learning_rate)
-        self.l2reg = True
+        self.l2reg = False
 
-        self.number_of_trajectories_per_iter = 64
+        self.number_of_trajectories_per_iter = self.mini_batch_size
         self.max_path_length = 5
         self.min_timesteps_per_batch = self.max_path_length*self.ac_dim*self.number_of_trajectories_per_iter
 
@@ -58,7 +65,7 @@ class PPO(object):
 
         self.random_goal = False
 
-        num_epochs = 10
+        num_epochs = 3
         self.num_ppo_updates = num_epochs*(self.number_of_trajectories_per_iter // self.mini_batch_size)
 
 
@@ -182,12 +189,12 @@ class PPO(object):
 
     def _build_critic(self):
         with tf.variable_scope('critic'):
+            critic_regul = tf.contrib.layers.l2_regularizer(1e-3) if self.l2reg else None
             sy_critic_meta_state = tf.concat([self.sy_ob,
                                               self.sy_ac_prev,
                                               # self.sy_re_prev,
                                               ], axis=-1)
 
-            critic_regul = tf.contrib.layers.l2_regularizer(1e-3) if self.l2reg else None
             sy_critic_meta_lstm_in = build_mlp(sy_critic_meta_state, self.state_dim, scope='input', n_layers=2,
                                                hidden_dim=20, output_activation=tf.nn.relu, kernel_regularizer=critic_regul)
 
@@ -197,8 +204,12 @@ class PPO(object):
                                                                       inputs=sy_critic_meta_lstm_in,
                                                                       initial_state=self.sy_critic_history_in,
                                                                       dtype=tf.float32)
-            self.critic_prediction  = tf.squeeze(tf.layers.dense(lstm_out, 1, activation=None, name='out_fc', kernel_regularizer=critic_regul))
-
+            # self.critic_prediction  = tf.squeeze(build_mlp(lstm_out, 1, activation=None, scope='out_fc',
+            #                                                n_layers=2,
+            #                                                hidden_dim=20,
+            #                                                kernel_regularizer=critic_regul))
+            self.critic_prediction  = tf.squeeze(tf.layers.dense(lstm_out, 1, activation=None, name='out_fc',
+                                                                 kernel_regularizer=critic_regul))
 
     def _build_log_prob(self):
         """
@@ -370,33 +381,38 @@ class PPO(object):
         if self.random_goal:
             path['z_obs'] = np.array(z_obs, dtype=np.float32)
         return path
+
     def rtg(self, re):
         assert re.ndim == 2
         rtg = np.zeros(shape=re.shape)
         for i in range(re.shape[1]):
+            gamma_vec = self.gamma**np.arange(0, re.shape[1]-1-i)
             rtg[:, i] = np.sum(re[:, i:], axis=1)
         return rtg
 
     def compute_q(self, re):
-        gamma_vector = np.power(self.gamma, range(re.shape[1]))
-        re_dicounted = re*gamma_vector
-        return self.rtg(re_dicounted)
+        rewards = re[:, ::-1]
+        rtg = scipy.signal.lfilter([1], [1, -self.gamma], rewards, axis=1)[:,::-1]
+        # gamma_vector = np.power(self.gamma, range(re.shape[1]))
+        # re_dicounted = re*gamma_vector
+        # return self.rtg(re_dicounted)
+        return rtg
 
     def estimate_advantage(self, ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, re_prev, ph_terminal):
         init_critic_history = np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32)
-        next_h = self.sess.run(self.updated_critic_history, feed_dict={self.sy_ob: ph_ob[:, 0, :][:, None, :],
-                                                                       self.sy_ac_prev: ph_ac_prev[:, 0][:, None, None],
-                                                                       self.sy_re_prev: re_prev[:, 0][:, None, None],
-                                                                       self.sy_critic_history_in: init_critic_history})
-
-        next_values = self.sess.run(self.critic_prediction, feed_dict={self.sy_ob: ph_next_ob,
-                                                                       self.sy_ac_prev: ph_ac[:,:, None],
-                                                                       self.sy_re_prev: re[:, :, None],
-                                                                       self.sy_critic_history_in: next_h})
-        q = re + self.gamma * next_values * (1-ph_terminal)
-
+        # next_h = self.sess.run(self.updated_critic_history, feed_dict={self.sy_ob: ph_ob[:, 0, :][:, None, :],
+        #                                                                self.sy_ac_prev: ph_ac_prev[:, 0][:, None, None],
+        #                                                                self.sy_re_prev: re_prev[:, 0][:, None, None],
+        #                                                                self.sy_critic_history_in: init_critic_history})
+        #
+        # next_values = self.sess.run(self.critic_prediction, feed_dict={self.sy_ob: ph_next_ob,
+        #                                                                self.sy_ac_prev: ph_ac[:,:, None],
+        #                                                                self.sy_re_prev: re[:, :, None],
+        #                                                                self.sy_critic_history_in: next_h})
+        # q = re + self.gamma * next_values * (1-ph_terminal)
         q = self.compute_q(re)
-        # print('[debug] q:{}, re:{}, next_values:{}, ph_terminal:{}'.format(q.shape, re.shape, next_values.shape, ph_terminal.shape))
+        #
+        # # print('[debug] q:{}, re:{}, next_values:{}, ph_terminal:{}'.format(q.shape, re.shape, next_values.shape, ph_terminal.shape))
         curr_values = self.sess.run(self.critic_prediction, feed_dict={self.sy_ob: ph_ob,
                                                                        self.sy_ac_prev: ph_ac_prev[:,:, None],
                                                                        self.sy_re_prev: re_prev[:, :, None],
@@ -405,10 +421,13 @@ class PPO(object):
         adv = q - curr_values
         if self.normalize_advantages:
             adv = (adv - np.mean(adv.flatten())) / (np.std(adv.flatten()) + 1e-8)
-        return adv
-        # return q
+        return adv, q
+        # bl_vec = np.mean(re, axis=0)
+        # bl = np.broadcast_to(bl_vec, re.shape)
+        # adv = q - bl
+        # return adv
 
-    def update_critic(self, ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, re_prev, ph_terminal):
+    def update_critic(self, ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, re_prev, ph_terminal, ph_q):
         init_critic_history = np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32)
         for i in range(self.num_grad_steps_per_target_update * self.num_target_updates):
             next_h = self.sess.run(self.updated_critic_history, feed_dict={self.sy_ob: ph_ob[:, 0, :][:, None, :],
@@ -428,6 +447,14 @@ class PPO(object):
                                                self.sy_re_prev: re_prev[:, :, None],
                                                self.sy_critic_history_in: init_critic_history,
                                                self.sy_target_values: target_n})
+        # init_critic_history = np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32)
+        # for _ in range(10):
+        #     _, loss = self.sess.run([self.critic_update_op, self.critic_loss],
+        #                             feed_dict={self.sy_ob: ph_ob,
+        #                                        self.sy_ac_prev: ph_ac_prev[:,:,None],
+        #                                        self.sy_re_prev: re_prev[:, :, None],
+        #                                        self.sy_critic_history_in: init_critic_history,
+        #                                        self.sy_target_values: ph_q})
 
     def update_actor(self, ph_ob, ph_ac, ph_ac_prev, re_prev, adv, ph_old_log_prob):
         """
@@ -538,29 +565,18 @@ class PPO(object):
             #     IPython.embed()
 
             ph_old_prob = np.reshape(old_prob_nt, newshape=[ph_ob.shape[0], ph_ob.shape[1]])
+
+            ph_q = None
             print("// taking gradient steps on critic ...")
-            self.update_critic(ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, ph_re_prev, ph_terminal)
+            self.update_critic(ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, ph_re_prev, ph_terminal, ph_q)
 
             print("// getting new advantage estimates ...")
-            ph_adv = self.estimate_advantage(ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, ph_re_prev, ph_terminal)
+            ph_adv, ph_q = self.estimate_advantage(ph_ob, ph_ac, ph_ac_prev, ph_next_ob, re, ph_re_prev, ph_terminal)
 
             # if itr >= 45:
             #     IPython.embed()
 
             print("// taking gradient step on actor ...")
-            # sy_init_history = np.zeros([ph_ob.shape[0], self.hist_dim*2], dtype=np.float32)
-            # feed_dict = {
-            #     self.sy_ob: ph_ob,
-            #     self.sy_ac: ph_ac[:,:, None],
-            #     self.sy_ac_prev: ph_ac_prev[:,:, None],
-            #     self.sy_re_prev: ph_re_prev[:, :, None],
-            #     # self.sy_adv: adv,
-            #     self.sy_actor_history_in: sy_init_history,
-            #     self.sy_old_log_prob_n: old_prob_nt
-            # }
-            # ratio_minus = self.sess.run(self.ratio, feed_dict=feed_dict)
-            # ratio_minus = np.reshape(ratio_minus, [-1,])
-            # print('ratio_before_update:{}'.format(ratio_minus[43]))
             for _ in range(self.num_ppo_updates):
 
                 random_path_indices = np.random.choice(len(paths), self.mini_batch_size, replace=False)
@@ -648,9 +664,16 @@ class PPO(object):
                 print('std: ',ph_stds[0])
                 print('mean: ',ph_means[0])
                 print('ac: ',ph_ac[0])
-                print('ent:', ent)
-                print('loss:', loss)
-                print('t_loss:', total_loss)
-                print('prob:', prob[:10])
-                print('log_prob:', log_prob[:10])
+                print('next_ob:', ph_next_ob[0])
+                print('re:', re[0])
+                print('q:', ph_q[0])
+                print('adv:', ph_adv[0])
+                print('cur_val:', ph_q[0] - ph_adv[0])
+                # if itr > 181 and itr < 190:
+                #     IPython.embed()
+                # print('ent:', ent)
+                # print('loss:', loss)
+                # print('t_loss:', total_loss)
+                # print('prob:', prob[:10])
+                # print('log_prob:', log_prob[:10])
             #     IPython.embed()

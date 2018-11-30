@@ -137,7 +137,7 @@ class PointMass(Env):
         for i in range(len(ob_array)):
             a = np.zeros(shape=[self.scale, self.scale])
             a[first_ob_array[i,0], first_ob_array[i,1]] = 1
-            a[boundary[i,0]:boundary[i,1], boundary[i,2]:boundary[i,3]]= 0.5
+            a[boundary[i,0]:(boundary[i,1]+1), boundary[i,2]:(boundary[i,3]+1)]= 0.5
             a = scipy.ndimage.zoom(a, 50//self.scale, order=0)
             images.append(a)
 

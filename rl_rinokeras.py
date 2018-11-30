@@ -27,7 +27,7 @@ parser.add_argument('--policy', type=str, choices=['standard', 'lstm'], default=
 parser.add_argument('--alg', type=str, choices=['vpg', 'ppo'], default='vpg',
                     help='Which algorithm to use to train the agent')
 parser.add_argument('--logstd', type=float, default=0, help='initial_logstd')
-# parser.add_argument('--seed', '-s', type=int, default=10)
+parser.add_argument('--seed', '-s', type=int, default=10)
 parser.add_argument('--mobj', type=bool, default=False, help='multiple objectives')
 
 args = parser.parse_args()
@@ -46,7 +46,7 @@ if args.env == 'pm3':
         env = PointMass_v3(multi_goal=True)
     else:
         env = PointMass_v3()
-if args.env == 'pm4':
+elif args.env == 'pm4':
     if args.mobj == True:
         env = PointMass_v4(multi_goal=True)
     else: 
@@ -55,9 +55,9 @@ else:
     env = gym.make(args.env)
 
 # initialize random seed
-# np.random.seed(args.seed)
-# tf.set_random_seed(args.seed)
-# env.seed(args.seed)
+np.random.seed(args.seed)
+tf.set_random_seed(args.seed)
+env.seed(args.seed)
 
 policies = {
     'standard': StandardPolicy,
@@ -87,7 +87,7 @@ policy = policies[args.policy](
     initial_logstd=args.logstd, n_layers_logits=1, n_layers_value=1, take_greedy_actions=False)
 
 experiment = algorithms[args.alg](policy, distribution_strategy=tf.contrib.distribute.OneDeviceStrategy('/cpu:0'),
-                                  entcoeff=0)
+                                  entcoeff=1)
 graph = TrainGraph.from_experiment(experiment, (obs_ph, act_ph, val_ph, seqlen_ph))
 
 runner = PGEnvironmentRunner(env, policy, gamma, max_episode_steps=50)

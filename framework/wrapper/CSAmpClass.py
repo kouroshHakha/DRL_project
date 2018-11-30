@@ -32,10 +32,10 @@ class CSAmpClass(NgSpiceWrapper):
         # use parse output here
         freq, vout,  ibias = self.parse_output(output_path)
         gain = self.find_dc_gain(vout)
-        ugbw = self.find_ugbw(freq, vout)
+        bw = self.find_bw(freq, vout)
 
         spec = dict(
-            ugbw=ugbw,
+            bw=bw,
             gain=gain,
             ibias=ibias
         )
@@ -65,6 +65,10 @@ class CSAmpClass(NgSpiceWrapper):
 
     def find_dc_gain (self, vout):
         return np.abs(vout)[0]
+
+    def find_bw(self, freq, vout):
+        gain = np.abs(vout)
+        return self._get_best_crossing(freq, gain, val=gain[0]/np.sqrt(2))
 
     def find_ugbw(self, freq, vout):
         gain = np.abs(vout)

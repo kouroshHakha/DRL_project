@@ -1,24 +1,24 @@
 import argparse
 import itertools
+import os
+import pickle
+import time
 
-import tensorflow as tf
-from tensorflow.keras.layers import Dense, Input
-import numpy as np
 import gym
-# import seaborn as sns
+import numpy as np
+import tensorflow as tf
+from envs.pointmass3 import PointMass as PointMass_v3
+from envs.pointmass4 import PointMass as PointMass_v4
+from envs.pointmass5_seq_with_int_rewards import PointMass as PointMass_v5
+from envs.ckt_env_discrete import CSAmp as CSAmpDiscrete
+from tensorflow.keras.layers import Dense, Input
 
+from rinokeras.rl.env_runners import PGEnvironmentRunner, BatchRollout
 from rinokeras.rl.policies import StandardPolicy, LSTMPolicy
 from rinokeras.rl.trainers import PolicyGradient, PPO
-from rinokeras.rl.env_runners import PGEnvironmentRunner, BatchRollout
 from rinokeras.train import TrainGraph
 
-from pointmass3 import PointMass as PointMass_v3
-from pointmass4 import PointMass as PointMass_v4
-
-import pickle
-import os
-import time
-import IPython
+# import seaborn as sns
 
 parser = argparse.ArgumentParser('Rinokeras RL Example Script')
 parser.add_argument('--env', type=str, default='pm', help='Which gym environment to run on')
@@ -27,8 +27,9 @@ parser.add_argument('--policy', type=str, choices=['standard', 'lstm'], default=
 parser.add_argument('--alg', type=str, choices=['vpg', 'ppo'], default='vpg',
                     help='Which algorithm to use to train the agent')
 parser.add_argument('--logstd', type=float, default=0, help='initial_logstd')
-parser.add_argument('--seed', '-s', type=int, default=10)
+# parser.add_argument('--seed', '-s', type=int, default=10)
 parser.add_argument('--mobj', type=bool, default=False, help='multiple objectives')
+parser.add_argument('--sparse', type=bool, default=False, help='determines sparsity of the reward')
 
 args = parser.parse_args()
 
@@ -42,22 +43,20 @@ if not(os.path.exists(logdir)):
 
 
 if args.env == 'pm3':
-    if args.mobj == True:
-        env = PointMass_v3(multi_goal=True)
-    else:
-        env = PointMass_v3()
+    env = PointMass_v3(multi_goal=args.mobj)
 elif args.env == 'pm4':
-    if args.mobj == True:
-        env = PointMass_v4(multi_goal=True)
-    else: 
-        env = PointMass_v4()
+    env = PointMass_v4(multi_goal=args.mobj)
+elif args.env == 'pm5':
+    env = PointMass_v5(multi_goal=args.mobj)
+elif args.env == 'ckt-v2':
+    env = CSAmpDiscrete(sparse=args.sparse)
 else:
     env = gym.make(args.env)
 
 # initialize random seed
-np.random.seed(args.seed)
-tf.set_random_seed(args.seed)
-env.seed(args.seed)
+# np.random.seed(args.seed)
+# tf.set_random_seed(args.seed)
+# env.seed(args.seed)
 
 policies = {
     'standard': StandardPolicy,
@@ -71,7 +70,7 @@ discrete = not isinstance(env.action_space, gym.spaces.Box)
 action_shape = (env.action_space.n,) if discrete else env.action_space.shape
 model_dim = 64
 gamma = 0.95
-n_rollouts_per_batch = 64
+n_rollouts_per_batch = 5
 n_updates_per_batch = 1 if args.alg == 'vpg' else 3
 embedding_model = Dense(model_dim)
 
@@ -90,7 +89,7 @@ experiment = algorithms[args.alg](policy, distribution_strategy=tf.contrib.distr
                                   entcoeff=1)
 graph = TrainGraph.from_experiment(experiment, (obs_ph, act_ph, val_ph, seqlen_ph))
 
-runner = PGEnvironmentRunner(env, policy, gamma, max_episode_steps=50)
+runner = PGEnvironmentRunner(env, policy, gamma, max_episode_steps=10)
 sess = tf.InteractiveSession()
 sess.run(tf.global_variables_initializer())
 
@@ -121,12 +120,12 @@ for t in itertools.count():
     printstr.append('MEAN EPISODE STEPS: {:>5}'.format(mean_episode_steps))
     print(', '.join(printstr))
 
-    if  env.__class__.__name__ == "PointMass":
-        obs_log = {'ob': batch_rollout.obs}
-        with open(os.path.join(logdir, '{}.dpkl'.format(t)), 'wb') as f:
-            pickle.dump(obs_log, f)
+    obs_log = {'ob': batch_rollout.obs}
+    with open(os.path.join(logdir, '{}.dpkl'.format(t)), 'wb') as f:
+        pickle.dump(obs_log, f)
 
-    np.save('-'.join([args.env, args.policy, args.alg, 'logstd=' + str(args.logstd) + '-mobj=' + str(args.mobj)]) + '.npy', np.array(all_rewards))
+    np.save('-'.join([args.env, args.policy, args.alg, 'logstd=' + str(args.logstd) + '-mobj=' + str(args.mobj) +
+                      '-sparse=' + str(args.sparse)]) + '.npy', np.array(all_rewards))
     if t > 1500:
         break
 

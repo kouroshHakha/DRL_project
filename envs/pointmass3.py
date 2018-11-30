@@ -36,15 +36,16 @@ class PointMass(Env):
         self.multi_goal = multi_goal
         self.observation_space = gym.spaces.Box(
             low=np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -5.0, -5.0]),
-            high=np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0,5.0, 5.0]))
-        self.action_space = gym.spaces.Discrete(48)
+            high=np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 5.0, 5.0]))
+        self.action_space = gym.spaces.Discrete(7)
         self.action_meaning = [-5,-3,-1,0,1,3,5]
-        self.boundaries = [[5,40,1,4], [2, 8, 1, 4], [44, 47, 1, 7], [30, 36, 35, 38], [2,8,44,50]]
+        self.boundaries = [[5,40,1,4],[2, 8, 1, 4], [44, 47, 1, 7], [30, 36, 35, 38], [2,8,44,50]]
         self.fixed_goal_idx = 0
-        self.spec = EnvSpec(id='PointMass-v4', max_episode_steps=int(max_episode_steps_coeff*self.scale))
+        self.spec = EnvSpec(id='PointMass-v3', max_episode_steps=int(max_episode_steps_coeff*self.scale))
 
     def reset(self):
         plt.close()
+        self.env_action = []
         self.state = np.array([5,40])
         if self.multi_goal == False:
             self.boundary = self.boundaries[self.fixed_goal_idx]
@@ -55,31 +56,36 @@ class PointMass(Env):
         return self.ob
 
     def step(self, action):
-        x = self.action_meaning[int(action // 7)]
-        y = self.action_meaning[int(action % 7)]
+
+        self.env_action.append(self.action_meaning[int(action)])
         # next state
-        new_x = self.state[0]+x
-        new_y = self.state[1]+y
-        if new_x < 0:
-            new_x = 0
-        if new_x > self.scale-1:
-            new_x = self.scale-1
-        if new_y < 0:
-            new_y = 0
-        if new_y > self.scale-1:
-            new_y = self.scale-1
-        self.state = np.array([new_x, new_y])
-        state = self.state/self.scale
+        if len(self.env_action) == 2:
+            x,y = self.env_action
+            new_x = self.state[0]+y
+            new_y = self.state[1]+x
+            if new_x < 0:
+                new_x = 0
+            if new_x > self.scale-1:
+                new_x = self.scale-1
+            if new_y < 0:
+                new_y = 0
+            if new_y > self.scale-1:
+                new_y = self.scale-1
+            self.state = np.array([new_x, new_y])
+            state = self.state/self.scale
 
-        if (self.boundary[0] <= new_x) and (new_x <= self.boundary[1]) and (self.boundary[2] <= new_y) and (new_y <= self.boundary[3]):
-            reward = 10
+            if self.boundary[0] <= new_x and new_x <= self.boundary[1] and self.boundary[2] < new_y and new_y < self.boundary[3]:
+                reward = 10
+            else:
+                reward = -1
+
+            # done
+            done = False
+            self.ob = np.concatenate([self.state, self.boundary, np.array([x,y])])
+            self.env_action = []
+            return self.ob, reward, done, None
         else:
-            reward = -1
-
-        # done
-        done = False
-        self.ob = np.concatenate([self.state, self.boundary, np.array([x,y])])
-        return self.ob, reward, done, None
+            return self.ob, 0, False, None
 
     def preprocess(self, state):
         scaled_state = self.scale * state

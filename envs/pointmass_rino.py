@@ -12,7 +12,7 @@ import pickle
 import IPython
 import time
 import scipy.ndimage
-import random
+import math
 
 class Env(object):
     def __init__(self):
@@ -28,64 +28,67 @@ class Env(object):
         raise NotImplementedError
 
 class PointMass(Env):
-    def __init__(self, max_episode_steps_coeff=1, scale=50, goal_padding=2.0, multi_goal=False):
+    def __init__(self, max_step = 20, max_episode_steps_coeff=1, scale=20, goal_padding=2.0):
         super(PointMass, self).__init__()
         # define scale such that the each square in the grid is 1 x 1
         self.scale = int(scale)
         self.grid_size = self.scale * self.scale
-        self.multi_goal = multi_goal
         self.observation_space = gym.spaces.Box(
-            low=np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -5.0, -5.0]),
-            high=np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 5.0, 5.0]))
-        self.action_space = gym.spaces.Discrete(7)
-        self.action_meaning = [-5,-3,-1,0,1,3,5]
-        self.boundaries = [[5,40,1,4],[2, 8, 1, 4], [44, 47, 1, 7], [30, 36, 35, 38], [2,8,44,50]]
-        self.fixed_goal_idx = 0
-        self.spec = EnvSpec(id='PointMass-v3', max_episode_steps=int(max_episode_steps_coeff*self.scale))
+            low=np.array([0.0, 0.0, 0.0, 0.0]),
+            high=np.array([1.0, 1.0, 1.0, 1.0]))
+        self.action_space = gym.spaces.Box(
+            low=np.array([-np.inf, -np.inf]),
+            high=np.array([np.inf, np.inf]))
+        self.goal_padding = goal_padding
+        self.worst_rew = -40
+        self.spec = EnvSpec(id='PointMass-v0', max_episode_steps=int(max_episode_steps_coeff*self.scale))
+        self.max_steps = max_step
 
-    def reset(self):
+    def reset(self, z_start=None, z_end=None):
         plt.close()
-        self.env_action = []
-        self.state = np.array([5,40])
-        if self.multi_goal == False:
-            self.boundary = self.boundaries[self.fixed_goal_idx]
+        self.t = 0
+
+        if z_start is None:
+            self.state = np.array([self.goal_padding, self.goal_padding])
         else:
-            self.changing_goal_idx = random.randint(0,len(self.boundaries)-1)
-            self.boundary = self.boundaries[self.changing_goal_idx]
-        self.ob = np.concatenate([self.state, self.boundary, np.zeros(2)])
-        return self.ob
+            self.state = (np.floor(z_start * self.scale) + 1) * 1.0
+        if z_end is None:
+            self.gob = np.array([15.0, 5.0])
+        else:
+            self.gob = (np.floor(z_end * self.scale) + 1) * 1.0
+
+        return np.concatenate([self.state, self.gob])
 
     def step(self, action):
+        self.t += 1
+        x, y = action
 
-        self.env_action.append(self.action_meaning[int(action)])
         # next state
-        if len(self.env_action) == 2:
-            x,y = self.env_action
-            new_x = self.state[0]+x
-            new_y = self.state[1]+y
-            if new_x < 0:
-                new_x = 0
-            if new_x > self.scale-1:
-                new_x = self.scale-1
-            if new_y < 0:
-                new_y = 0
-            if new_y > self.scale-1:
-                new_y = self.scale-1
-            self.state = np.array([new_x, new_y])
-            state = self.state/self.scale
+        new_x = self.state[0]+x
+        new_y = self.state[1]+y
+        if new_x < 0:
+            new_x = 0
+        if new_x > self.scale:
+            new_x = self.scale
+        if new_y < 0:
+            new_y = 0
+        if new_y > self.scale:
+            new_y = self.scale
+        self.state = np.array([new_x, new_y])
+        state = self.state/self.scale
 
-            if self.boundary[0] <= new_x and new_x <= self.boundary[1] and self.boundary[2] < new_y and new_y < self.boundary[3]:
-                reward = 10
-            else:
-                reward = -1
-
-            # done
-            done = False
-            self.ob = np.concatenate([self.state, self.boundary, np.array([x,y])])
-            self.env_action = []
-            return self.ob, reward, done, None
+        if abs(new_x-self.gob[0]) <= 1 and abs(new_y-self.gob[1]) <= 1:
+            # print("goal met")
+            reward = 10
         else:
-            return self.ob, 0, False, None
+            reg_term = -np.sum(abs(self.state - self.gob) / self.gob)
+            reward = reg_term
+
+        # done
+        # done = False
+        done = True if self.t >= self.max_steps else False
+        ret_ob = np.concatenate([self.state, self.gob])
+        return ret_ob, reward, done, None
 
     def preprocess(self, state):
         scaled_state = self.scale * state
@@ -133,18 +136,21 @@ class PointMass(Env):
             data = pickle.load(f)
             ob_array = data['ob']
 
-        ob_array = np.reshape(ob_array, newshape=[-1,self.observation_space.shape[0]])
-        first_ob_array = ob_array[:,:2].astype(np.int)
-        boundary = ob_array[:, 2:6].astype(np.int)
-        # ob_indices = np.array([int(self.preprocess(s)) for s in first_ob_array])
+        ob_array = np.reshape(ob_array, newshape=[-1,self.observation_space.shape[0]]) / self.scale
+        first_ob_array = ob_array[:,:2]
+        gob_array = ob_array[:, 2:]
+
+        ob_indices = np.array([int(self.preprocess(s)) for s in first_ob_array])
+        gob_indices = np.array([int(self.preprocess(s)) for s in gob_array])
 
         images = []
-        # for cnt, i in zip(range(len(ob_indices)), ob_indices):
-        for i in range(len(ob_array)):
-            a = np.zeros(shape=[self.scale, self.scale])
-            a[first_ob_array[i,0], first_ob_array[i,1]] = 1
-            a[boundary[i,0]:(boundary[i,1]+1), boundary[i,2]:(boundary[i,3]+1)]= 0.5
-            a = scipy.ndimage.zoom(a, 50//self.scale, order=0)
+        start = time.time()
+        for cnt, i, j in zip(range(len(ob_indices)), ob_indices, gob_indices):
+            a = np.zeros(int(self.grid_size))
+            a[i] = 1
+            a[j]= 0.5
+            a = np.reshape(a, (self.scale, self.scale))
+            a = scipy.ndimage.zoom(a, 200//self.scale, order=0)
             images.append(a)
 
         dirname = os.path.dirname(fname)

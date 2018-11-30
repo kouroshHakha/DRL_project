@@ -1,16 +1,16 @@
-import gym
-import gym_ckt
-import IPython
-import time
-from pointmass import PointMass
-from pointmass2 import PointMass as PointMass2
 import os
-from vpg import VPG
+import time
+
+import gym
+from envs.ckt_env2 import CSAmp as CSAmp2
+from envs.pointmass2 import PointMass as PointMass2
+from envs.ckt_env import CSAmp
+from envs.pointmass import PointMass
+
 from ac import AC
-from ppo_ac2 import PPO as PPO2
 from ppo_ac import PPO as PPO
-from ckt_env import CSAmp
-from ckt_env2 import CSAmp as CSAmp2
+from ppo_ac2 import PPO as PPO2
+from vpg import VPG
 
 if __name__ == '__main__':
 

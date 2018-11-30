@@ -39,7 +39,7 @@ class PointMass(Env):
             high=np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 5.0, 5.0]))
         self.action_space = gym.spaces.Discrete(7)
         self.action_meaning = [-5,-3,-1,0,1,3,5]
-        self.boundaries = [[2, 8, 1, 4], [44, 47, 1, 7], [30, 36, 35, 38], [2,8,44,50]]
+        self.boundaries = [[5,40,1,4],[2, 8, 1, 4], [44, 47, 1, 7], [30, 36, 35, 38], [2,8,44,50]]
         self.fixed_goal_idx = 0
         self.spec = EnvSpec(id='PointMass-v3', max_episode_steps=int(max_episode_steps_coeff*self.scale))
 

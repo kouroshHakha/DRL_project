@@ -1,3 +1,6 @@
+"""
+Pointmass env with discrete actions and dense reward
+"""
 import gym
 from gym.envs.registration import EnvSpec
 import imageio
@@ -28,29 +31,41 @@ class Env(object):
         raise NotImplementedError
 
 class PointMass(Env):
-    def __init__(self, max_episode_steps_coeff=1, scale=50, goal_padding=2.0, multi_goal=False):
+    def __init__(self, max_episode_steps_coeff=1, scale=70, goal_padding=2.0, multi_goal=False, sparse=False):
         super(PointMass, self).__init__()
         # define scale such that the each square in the grid is 1 x 1
         self.scale = int(scale)
         self.grid_size = self.scale * self.scale
         self.multi_goal = multi_goal
+        self.sparse = sparse
         self.observation_space = gym.spaces.Box(
             low=np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -5.0, -5.0]),
             high=np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0,5.0, 5.0]))
         self.action_space = gym.spaces.Discrete(48)
         self.action_meaning = [-5,-3,-1,0,1,3,5]
-        self.boundaries = [[2, 8, 1, 4], [44, 47, 1, 7], [30, 36, 35, 38], [2,8,44,50]] #[5,40,1,4],
-        self.fixed_goal_idx = 0
+        self.boundaries = [[2,8,44,50], [2, 8, 1, 4], [30, 36, 35, 38], [42,48, 1, 7]] #[44, 47, 1, 7],
+        self.fixed_goal_idx = 3
         self.spec = EnvSpec(id='PointMass-v4', max_episode_steps=int(max_episode_steps_coeff*self.scale))
+
+    def get_boundary(self, center_x, center_y):
+        bound = [center_x-3, center_x+3, center_y-3, center_y+3]
+        bound = np.clip(bound, 0, self.scale-1)
+        return bound
 
     def reset(self):
         plt.close()
-        self.state = np.array([5,40])
+        self.state = np.array([5,self.scale-10])
         if self.multi_goal == False:
             self.boundary = self.boundaries[self.fixed_goal_idx]
         else:
             self.changing_goal_idx = random.randint(0,len(self.boundaries)-1)
             self.boundary = self.boundaries[self.changing_goal_idx]
+            # center = random.randint(0, self.grid_size-1)
+            # center_x = center // self.scale
+            # center_y = center % 7
+            # boundary = [center_x-3, center_x+3, center_y-3, center_y+3]
+            # self.boundary = np.clip(boundary, 0, self.scale-1)
+
         self.ob = np.concatenate([self.state, self.boundary, np.zeros(2)])
         self.x_goal = (self.boundary[0]+self.boundary[1])/2
         self.y_goal = (self.boundary[2]+self.boundary[3])/2
@@ -74,12 +89,17 @@ class PointMass(Env):
         state = self.state/self.scale
 
         if (self.boundary[0] <= new_x) and (new_x <= self.boundary[1]) and (self.boundary[2] <= new_y) and (new_y <= self.boundary[3]):
+            done = True
             reward = 10
         else:
-            reward = -abs((new_x-self.x_goal)/self.x_goal)-abs((new_y-self.y_goal)/self.y_goal)
+            done = False
+            if self.sparse:
+                reward = -1
+            else:
+                reward = -abs((new_x-self.x_goal)/self.x_goal)-abs((new_y-self.y_goal)/self.y_goal)
 
         # done
-        done = False
+        # done = False
         self.ob = np.concatenate([self.state, self.boundary, np.array([x,y])])
         return self.ob, reward, done, None
 
@@ -140,7 +160,7 @@ class PointMass(Env):
             a = np.zeros(shape=[self.scale, self.scale])
             a[first_ob_array[i,0], first_ob_array[i,1]] = 1
             a[boundary[i,0]:(boundary[i,1]+1), boundary[i,2]:(boundary[i,3]+1)]= 0.5
-            a = scipy.ndimage.zoom(a, 50//self.scale, order=0)
+            a = scipy.ndimage.zoom(a, 1, order=0)
             images.append(a)
 
         dirname = os.path.dirname(fname)

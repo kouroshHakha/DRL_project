@@ -44,7 +44,7 @@ def updateHer(batch_rollout, env):
 
     rollouts = copy.deepcopy(batch_rollout.rollouts)
     env.boundaries = []
-    env.mobj = True
+    env.multi_goal = True
     def score_fn(state, boundary):
         assert len(state) == 2, 'cur_state does not have the right dimensions, len={} vs. 2'.format(len(state))
         assert len(boundary) == 4, 'boundbox does not have the right dimensions, len={} vs. 4'.format(len(boundary))
@@ -54,14 +54,24 @@ def updateHer(batch_rollout, env):
         return score
 
     best_score_list = []
+    boundary_list = []
     for roll in rollouts:
-        score = [score_fn(state=ob[:2],boundary=ob[2:6]) for ob in roll.obs]
-        best_ob = copy.deepcopy(roll.obs[np.argmax(score)])
-        best_score_list.append(np.max(score))
-        new_bound = env.get_boundary(best_ob[0], best_ob[1])
-        env.boundaries.append(new_bound)
-
-    IPython.embed()
+        if len(roll) <  max_ep_steps:
+            new_bound = roll.obs[0][2:6]
+            best_score_list.append(0)
+        else:
+            score = [score_fn(state=ob[:2],boundary=ob[2:6]) for ob in roll.obs]
+            best_ob = copy.deepcopy(roll.obs[np.argmax(score)])
+            best_score_list.append(np.max(score))
+            new_bound = env.get_boundary(best_ob[0], best_ob[1])
+        boundary_list.append(new_bound)
+        # env.boundaries.append(new_bound)
+    sorted_indices = sorted([i for i in range(len(best_score_list))], key=lambda x:best_score_list[x], reverse=True)
+    sorted_boundaries = [boundary_list[i] for i in sorted_indices]
+    # env.boundaries.append(boundary_list[np.argmax(best_score_list)])
+    env.boundaries+=sorted_boundaries[:10]
+    # print(np.max(best_score_list))
+    print([best_score_list[i] for i in sorted_indices][:10])
 
 parser = argparse.ArgumentParser('Rinokeras RL Example Script')
 parser.add_argument('--env', type=str, default='pm', help='Which gym environment to run on')
@@ -116,6 +126,7 @@ action_shape = (env.action_space.n,) if discrete else env.action_space.shape
 model_dim = 64
 gamma = 0.95
 n_rollouts_per_batch = 40
+max_ep_steps=  50
 n_updates_per_batch = 1 if args.alg == 'vpg' else 3
 embedding_model = Dense(model_dim)
 
@@ -134,14 +145,14 @@ experiment = algorithms[args.alg](policy, distribution_strategy=tf.contrib.distr
                                   entcoeff=1)
 graph = TrainGraph.from_experiment(experiment, (obs_ph, act_ph, val_ph, seqlen_ph))
 
-runner = PGEnvironmentRunner(env, policy, gamma, max_episode_steps=50)
+runner = PGEnvironmentRunner(env, policy, gamma, max_episode_steps=max_ep_steps)
 sess = tf.InteractiveSession()
 sess.run(tf.global_variables_initializer())
 
 all_valid_rewards = []
 all_rewards = []
 
-runner_validation = PGEnvironmentRunner(env_validation, policy, gamma, max_episode_steps=50)
+runner_validation = PGEnvironmentRunner(env_validation, policy, gamma, max_episode_steps=max_ep_steps)
 # Do Training
 for t in itertools.count():
     validation_rollouts = []
@@ -186,11 +197,15 @@ for t in itertools.count():
     with open(os.path.join(logdir, '{}.dpkl'.format(t)), 'wb') as f:
         pickle.dump(obs_log, f)
 
+    obs_log_temp_goals = {'ob': batch_rollout.obs}
+    with open(os.path.join(logdir, 'tg_{}.dpkl'.format(t)), 'wb') as f:
+        pickle.dump(obs_log_temp_goals, f)
+
     np.save('-'.join([args.env, args.policy, args.alg, 'logstd=' + str(args.logstd) + '-mobj=' + str(args.mobj) +
                       '-sparse=' + str(args.sparse) + '-her=' + str(args.her)]) + '.npy', np.array(all_valid_rewards))
 
-    if args.her:
-        batch_rollout.extend(validation_batch_rollout)
+    # if args.her:
+    #     batch_rollout.extend(validation_batch_rollout)
 
     if args.alg == 'ppo':
         experiment.update_old_model()

@@ -31,7 +31,7 @@ class Env(object):
         raise NotImplementedError
 
 class PointMass(Env):
-    def __init__(self, max_episode_steps_coeff=1, scale=70, goal_padding=2.0, multi_goal=False, sparse=False):
+    def __init__(self, max_episode_steps_coeff=1, scale=200, goal_padding=2.0, multi_goal=False, sparse=False):
         super(PointMass, self).__init__()
         # define scale such that the each square in the grid is 1 x 1
         self.scale = int(scale)
@@ -43,8 +43,8 @@ class PointMass(Env):
             high=np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0,5.0, 5.0]))
         self.action_space = gym.spaces.Discrete(48)
         self.action_meaning = [-5,-3,-1,0,1,3,5]
-        self.boundaries = [[2,8,44,50], [2, 8, 1, 4], [30, 36, 35, 38], [42,48, 1, 7]] #[44, 47, 1, 7],
-        self.fixed_goal_idx = 3
+        self.boundaries = [[2,8,44,50], [2, 8, 1, 4], [30, 36, 35, 38], [62,68, 1, 7], [192, 198, 1, 7]] #  #[44, 47, 1, 7],
+        self.fixed_goal_idx = 4
         self.spec = EnvSpec(id='PointMass-v4', max_episode_steps=int(max_episode_steps_coeff*self.scale))
 
     def get_boundary(self, center_x, center_y):
@@ -156,7 +156,7 @@ class PointMass(Env):
 
         images = []
         # for cnt, i in zip(range(len(ob_indices)), ob_indices):
-        for i in range(len(ob_array)):
+        for i in range(int(len(ob_array)*0.2)):
             a = np.zeros(shape=[self.scale, self.scale])
             a[first_ob_array[i,0], first_ob_array[i,1]] = 1
             a[boundary[i,0]:(boundary[i,1]+1), boundary[i,2]:(boundary[i,3]+1)]= 0.5
@@ -211,8 +211,9 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('dirname', type=str)
+    parser.add_argument('--scale', type=int, default=200)
     args = parser.parse_args()
-    env = PointMass()
+    env = PointMass(scale=args.scale)
     env.reset()
     env.create_visualization(args.dirname)
 

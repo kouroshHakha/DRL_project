@@ -1,5 +1,33 @@
 import tensorflow as tf
 import numpy as np
+import random
+
+class ExperienceBuffer(object):
+
+
+    def __init__(self, bufferSize):
+        self.size = bufferSize
+        self.goals = []
+        self.next_id = 0
+
+    def flush(self):
+        self.goals = []
+        self.next_id = 0
+
+    def add(self, goal):
+        if len(self.goals) < self.size:
+            self.goals.append(goal)
+        else:
+            self.goals[int(self.next_id)] = goal
+
+        self.next_id = int((self.next_id + 1) % self.size)
+
+    def can_sample(self, batch_size):
+        return batch_size <= len(self.goals)
+
+    def sample(self, batch_size):
+        assert self.can_sample(batch_size), 'Don\'t have enough samples to sample from'
+        return random.sample(self.goals, k=batch_size)
 
 class PPOReplayBuffer(object):
     '''

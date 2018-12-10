@@ -89,7 +89,7 @@ class CSAmp(gym.Env):
         # param array
         params = yaml_data['params']
         self.params = []
-        self.params_id = params.keys()
+        self.params_id = list(params.keys())
 
         for value in params.values():
             param_vec = np.arange(value[0], value[1], value[2])
@@ -118,21 +118,24 @@ class CSAmp(gym.Env):
 
         spec_size = len(self.specs_id)
         # select first o*
-        rand_oidx = 0 #random.randint(0,self.num_os-1)
+        rand_oidx = -1 #random.randint(0,self.num_os-1)
         # self.task_id = one_hot(rand_oidx, self.num_os)
         self.specs_ideal = []
         for spec in list(self.specs.values()):
             self.specs_ideal.append(spec[rand_oidx])
+        self.specs_ideal = np.array(self.specs_ideal)
 
-        if z is None:
-            z = np.zeros(spec_size)
-
-        cov = sigma*np.identity(spec_size)
-        self.specs_ideal_norm = np.ones(spec_size) + np.matmul(cov, np.ones(spec_size)*z)
+        # if z is None:
+        #     z = np.zeros(spec_size)
+        #
+        # cov = sigma*np.identity(spec_size)
+        # self.specs_ideal_norm = np.ones(spec_size) + np.matmul(cov, np.ones(spec_size)*z)
+        self.specs_ideal_norm = self.lookup(self.specs_ideal, self.specs_ideal)
 
         self.cur_params_idx = np.array([3, 10])
-        cur_spec_norm = self._update()
-        reward = self._reward()
+        self.cur_specs = self.update(self.cur_params_idx)
+        cur_spec_norm = self.lookup(self.cur_specs, self.specs_ideal)
+        reward = self.reward(self.cur_specs, self.specs_ideal)
 
         return np.concatenate([cur_spec_norm, self.cur_params_idx, [reward], self.specs_ideal_norm, [-1]], axis=0)
 
@@ -146,17 +149,14 @@ class CSAmp(gym.Env):
         a2 = self.action_meaning[int(action % 7)]
         self.cur_params_idx = self.cur_params_idx + np.array([a1,a2])
         self.cur_params_idx = np.clip(self.cur_params_idx, [0,0], [(len(param_vec)-1) for param_vec in self.params])
-        cur_spec_norm = self._update()
-        reward = self._reward()
+
+        self.cur_specs = self.update(self.cur_params_idx)
+        cur_spec_norm  = self.lookup(self.cur_specs, self.specs_ideal)
+        reward = self.reward(self.cur_specs, self.specs_ideal)
         done = False
 
         #incentivize reaching goal state
-        if (reward > -0.05):
-            done = False
-            if self.sparse:
-                reward = 10
-            else:
-                reward = 10 + np.sum(self._lookup())
+        if (reward >= 10):
             print('-'*10)
             print('params = ', self.cur_params_idx)
             print('specs:', self.cur_specs)
@@ -165,46 +165,48 @@ class CSAmp(gym.Env):
 
         return np.concatenate([cur_spec_norm, self.cur_params_idx, [reward], self.specs_ideal_norm, [action]], axis=0), reward, done, {"params": action}
 
-    def _lookup(self):
-        '''
-        Calculates relative difference between ideal and current spec
-        '''
-        rel_specs = []
-        for i, spec_tuple in enumerate(self.cur_specs.items()):
-            spec_key, spec_val = spec_tuple
-            rel_spec = rel_diff(spec_val,self.specs_ideal[i])
-            if spec_key == 'ibias':
-                rel_spec = rel_spec*(-1)
-            rel_specs.append(rel_spec)
-        return np.array(rel_specs)
+    def unlookup(self, norm_spec, goal_spec):
+        spec = np.multiply(norm_spec, goal_spec) + goal_spec
+        return spec
+    def lookup(self, spec, goal_spec):
+        norm_spec = (spec-goal_spec)/goal_spec
+        return norm_spec
+        # rel_specs = []
+        # for i, spec_tuple in enumerate(self.cur_specs.items()):
+        #     spec_key, spec_val = spec_tuple
+        #     rel_spec = rel_diff(spec_val,self.specs_ideal[i])
+        #     if spec_key == 'ibias':
+        #         rel_spec = rel_spec*(-1)
+        #     rel_specs.append(rel_spec)
+        # return np.array(rel_specs)
 
-    def _reward(self):
+    def reward(self, spec, goal_spec):
         '''
         Reward: doesn't penalize for overshooting spec, is negative
         '''
-        rel_specs = self._lookup()
+        rel_specs = self.lookup(spec, goal_spec)
         reward = 0.0
         for i,rel_spec in enumerate(rel_specs):
-            # if(list(self.cur_specs.keys())[i] == 'ibias'):
-            #     rel_spec = rel_spec*-1.0
+            if(self.specs_id[i] == 'ibias_arr'):
+                rel_spec = rel_spec*-1.0
             if rel_spec < 0:
                 reward += rel_spec
 
         if self.sparse:
-            return -1 if reward < 0.05 else 0
+            return -1 if reward < -0.05 else 10
         else:
-            return reward
+            return reward if reward < -0.05 else 10+np.sum(rel_specs)
 
-    def _update(self):
+    def update(self, params_idx):
         """
 
         :param action: an int between 0 ... n-1
         :return:
         """
-        params = [self.params[i][self.cur_params_idx[i]] for i in range(len(self.params_id))]
+        params = [self.params[i][params_idx[i]] for i in range(len(self.params_id))]
         param_val = [OrderedDict(list(zip(self.params_id,params)))]
 
         #run param vals and simulate
-        self.cur_specs = OrderedDict(sorted(self.sim_env.create_design_and_simulate(param_val, verbose=True)[0][1].items(), key=lambda k:k[0]))
-
-        return self._lookup() #np.array(list(self.cur_specs.values()))
+        cur_specs = OrderedDict(sorted(self.sim_env.create_design_and_simulate(param_val, verbose=True)[0][1].items(), key=lambda k:k[0]))
+        cur_specs = np.array(list(cur_specs.values()))
+        return cur_specs

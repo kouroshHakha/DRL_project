@@ -1,111 +1,95 @@
-import os
-import time
+from multiprocessing import Process
+from rl_rinokeras import train
 
-import gym
-from envs.ckt_env2 import CSAmp as CSAmp2
-from envs.pointmass2 import PointMass as PointMass2
-from envs.ckt_env import CSAmp
-from envs.pointmass import PointMass
+from envs.pointmass4 import PointMass as PointMass_v4
+from envs.pointmass5_seq_with_int_rewards import PointMass as PointMass_v5
+from envs.ckt_env_discrete import CSAmp as CSAmpDiscrete
+from envs.goal_env_wrapper import GoalEnvWrapper
+from envs.pointmass3d_discrete import PointMass3dd, goal_distance
+from envs.pointmass4_cont import PointMass4Cont
 
-from ac import AC
-from ppo_ac import PPO as PPO
-from ppo_ac2 import PPO as PPO2
-from vpg import VPG
-
-if __name__ == '__main__':
-
+def main():
     import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('env_name', type=str)
-    parser.add_argument('agent', type=str, default='vpg | ac | ppo | ppo2')
-    parser.add_argument('--exp_name', type=str, default='rnn')
-    parser.add_argument('--n_iter', '-n', type=int, default=100)
-    parser.add_argument('--reward_to_go', '-rtg', action='store_true')
-    parser.add_argument('--norm_adv', '-na', action='store_true')
-    parser.add_argument('--animate', '-show', action='store_true')
-    parser.add_argument('--nn_baseline', '-bl', action='store_true')
-    parser.add_argument('--hist_dim', '-hd', type=int, default=128)
-    parser.add_argument('--state_dim', '-sd', type=int, default=128)
-    parser.add_argument('--mini_batch', '-mb', type=int, default=64)
-    parser.add_argument('--rollout', '-ro', type=int, default=20)
-    parser.add_argument('--lr', '-lr', type=float, default=0.001)
-    parser.add_argument('--gamma', '-g', type=float, default=0.99)
-    parser.add_argument('--seed', '-s', type=int, default=20)
+    parser = argparse.ArgumentParser('Main Example')
+    parser.add_argument('env', type=str, help='Which gym environment to run on')
+    parser.add_argument('exp_name', type=str, help='The name of the experiment')
+    parser.add_argument('--policy', '-p' ,type=str, choices=['standard', 'lstm'], default='standard',
+                        help='Which type of policy to run')
+    parser.add_argument('--alg', '-a', type=str, choices=['vpg', 'ppo'], default='vpg',
+                        help='Which algorithm to use to train the agent')
+    parser.add_argument('--logstd', type=float, default=0, help='initial_logstd')
+    parser.add_argument('--seed', '-s', type=int, default=1)
+    parser.add_argument('--n_experiments', '-e', type=int, default=1, help='number of experiments')
+    parser.add_argument('--sparse', action='store_true', help='determines sparsity of the reward')
+    parser.add_argument('--her', action='store_true', help='Added Hindsight Experience Buffer')
+    parser.add_argument('--max_iter', '-n', type=int, default=500)
+    parser.add_argument('--gamma', type=float, default=0.95)
+    parser.add_argument('--max_ep_len', '-ep', type=float, default=50)
+    parser.add_argument('--n_layers', '-l', type=int, default=1)
+    parser.add_argument('--model_dim', '-size', type=int, default=64)
+    parser.add_argument('--g_star_batch_size', '-g_star_b', type=int, default=40)
+    parser.add_argument('--sub_g_batch_size', '-sub_g_b', type=int, default=40)
+    parser.add_argument('--ent_coeff', '-ec', type=float, default=1)
+    parser.add_argument('--buffer_size', '-bs', type=int, default=40)
     args = parser.parse_args()
 
-    if not(os.path.exists('data')):
-        os.makedirs('data')
-    logdir = args.exp_name + '_' + args.env_name + '_' + time.strftime("%d-%m-%Y_%H-%M-%S")
-    logdir = os.path.join('data', logdir)
-    if not(os.path.exists(logdir)):
-        os.makedirs(logdir)
 
-    if args.env_name == 'pm':
-        env = PointMass()
-    elif  args.env_name == 'ckt':
-        env = CSAmp()
-    elif args.env_name == 'pm2':
-        env = PointMass2()
-    elif  args.env_name == 'ckt2':
-        env = CSAmp2()
+    env_sub_goals = None
+    env_actual_goal = None
+
+    if args.env == 'pm4':
+        env_sub_goals = PointMass_v4(sparse=args.sparse)
+        env_actual_goal = PointMass_v4(sparse=args.sparse)
+    elif args.env == 'ckt-v2':
+        env_sub_goals = CSAmpDiscrete(sparse=args.sparse)
+        env_actual_goal = CSAmpDiscrete(sparse=args.sparse)
+    elif args.env == 'pm3dd':
+        env_sub_goals = PointMass3dd(sparse=args.sparse)
+        env_actual_goal = PointMass3dd(sparse=args.sparse)
+    elif args.env == 'pm4c':
+        env_sub_goals = PointMass4Cont(sparse=args.sparse)
+        env_actual_goal = PointMass4Cont(sparse=args.sparse)
     else:
-        env = gym.make(args.env_name)
+        env_sub_goals = GoalEnvWrapper(args.env, seed=args.seed, sparse=args.sparse)
+        env_actual_goal = GoalEnvWrapper(args.env, seed=args.seed, sparse=args.sparse)
 
+    processes = []
+    for e in range(args.n_experiments):
+        seed = args.seed + 10*e
+        print('Running experiment with seed %d'%seed)
 
-    computation_graph_args = {
-        'ob_dim': env.observation_space.shape[0],
-        'ac_dim': env.action_space.shape[0],
-        'hist_dim': args.hist_dim,
-        'state_dim': args.state_dim,
-        'mini_batch_size': args.mini_batch,
-        'roll_out_h': args.rollout,
-        'learning_rate': args.lr,
-    }
+        def train_func():
+            train(
+                exp_name=args.exp_name,
+                env_name=args.env,
+                env_actual_goal=env_actual_goal,
+                env_sub_goals=env_sub_goals,
+                seed=seed,
+                policy_type=args.policy,
+                algorithm=args.alg,
+                init_logstd=args.logstd,
+                use_her=args.her,
+                gamma=args.gamma,
+                model_dim=args.model_dim,
+                n_layers=args.n_layers,
+                n_rollout_per_actual_goal=args.g_star_batch_size,
+                n_rollouts_per_sub_goals=args.sub_g_batch_size,
+                max_ep_steps=args.max_ep_len,
+                entcoeff = args.ent_coeff,
+                ex_buffer_size=args.buffer_size,
+                max_iter=args.max_iter,
+            )
+        # # Awkward hacky process runs, because Tensorflow does not like
+        # # repeatedly calling train_PG in the same thread.
+        p = Process(target=train_func, args=tuple())
+        p.start()
+        processes.append(p)
+        # if you comment in the line below, then the loop will block
+        # until this process finishes
+        # p.join()
 
-    pg_flavor_args = {
-        'gamma': args.gamma,
-        'reward_to_go': args.reward_to_go,
-        'nn_baseline': args.nn_baseline,
-        'normalize_advantages': args.norm_adv,
-        'seed': args.seed,
-    }
+    for p in processes:
+        p.join()
 
-    # agent = None
-
-    if args.agent == 'vpg':
-        agent = VPG(
-            env=env,
-            animate=(args.animate and env.__class__.__name__ == "PointMass"),
-            computation_graph_args=computation_graph_args,
-            pg_flavor_args=pg_flavor_args,
-
-        )
-    elif args.agent == 'ac':
-        agent = AC(
-            env=env,
-            animate=(args.animate and env.__class__.__name__ == "PointMass"),
-            computation_graph_args=computation_graph_args,
-            pg_flavor_args=pg_flavor_args,
-
-        )
-    elif args.agent == 'ppo':
-        agent = PPO(env=env,
-            animate=(args.animate and env.__class__.__name__ == "PointMass"),
-            computation_graph_args=computation_graph_args,
-            pg_flavor_args=pg_flavor_args,
-
-        )
-    elif args.agent == 'ppo2':
-        agent = PPO2(env=env,
-            animate=(args.animate and env.__class__.__name__ == "PointMass"),
-            computation_graph_args=computation_graph_args,
-            pg_flavor_args=pg_flavor_args,
-
-        )
-
-
-    agent.build_computation_graph()
-
-    # tensorflow: config, session, variable initialization
-    agent.init_tf_sess()
-    agent.train(args.n_iter, os.path.join(logdir, '%d'%0))
+if __name__ == "__main__":
+    main()

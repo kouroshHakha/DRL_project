@@ -48,12 +48,12 @@ the --legend flag and then provide a title for each logdir.
 
 """
 
-def plot_data(data, value="AverageReturn"):
+def plot_data(data, value="g*_mean_reward"):
     if isinstance(data, list):
         data = pd.concat(data, ignore_index=True)
 
     sns.set(style="darkgrid", font_scale=1.5)
-    sns.tsplot(data=data, time="Iteration", value=value, unit="Unit", condition="Condition")
+    sns.tsplot(data=data, time="iteration", value=value, unit="Unit", condition="Condition")
     plt.legend(loc='best').draggable()
     plt.show()
 
@@ -92,7 +92,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('logdir', nargs='*')
     parser.add_argument('--legend', nargs='*')
-    parser.add_argument('--value', default='AverageReturn', nargs='*')
+    parser.add_argument('--value', default='g*_mean_reward', nargs='*')
     args = parser.parse_args()
 
     use_legend = False

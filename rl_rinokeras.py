@@ -17,10 +17,10 @@ from rinokeras.rl.policies import StandardPolicy, LSTMPolicy
 from rinokeras.rl.trainers import PolicyGradient, PPO
 from rinokeras.train import TrainGraph
 
-from envs.pointmass3d_discrete import goal_distance
+from gym.wrappers import Monitor
 
 def setup_logger(kwargs):
-    logdir = os.path.join('data_plot', kwargs['exp_name'] + '_' + time.strftime("%d-%m-%Y_%H-%M-%S"))
+    logdir = os.path.join('/tmp/data_plot', kwargs['exp_name'] + '_' + time.strftime("%d-%m-%Y_%H-%M-%S"))
     logdir = os.path.join(logdir, str(kwargs['seed']))
     # Configure output directory for logging
     logz.configure_output_dir(logdir)
@@ -51,11 +51,16 @@ def train(
         entcoeff = 1, # the coefficient for entropy penalty in the total loss function
         ex_buffer_size=40, # the size of experience buffer size
         max_iter=500, # the maximum number of iterations that the algorithm is run for
+        sub_goal_strategy='random', # the strategy for choosing sub-goals when using our approach
+        l2_scale=0, # l2_regularization scale, important when using ppo with large network, prevents over-fitting (1e-2 is a starting point) *NOTE: doesn't work for LSTM yet
+        learning_rate=1e-3,
+        n_updates_per_sub_goals=5,
+        monitor_period=None,
         ):
 
     setup_logger(locals())
     start = time.time()
-
+    t = 0
     # define some hacky functions
     def updateHer(batch_rollout, env, experience_buffer):
         # this function only works for pointmass 4 not circuits
@@ -78,17 +83,19 @@ def train(
             return score
 
         best_score_list = []
-        boundary_list = []
         for roll in rollouts:
             if len(roll) <  max_ep_steps:
                 new_bound = roll.obs[0][2:6]
                 best_score_list.append(0)
             else:
-                # score = [score_fn(state=ob[:2],boundary=ob[2:6]) for ob in roll.obs]
-                # best_ob = copy.deepcopy(roll.obs[np.argmax(score)])
-                # index = random.randint(0, len(roll)-1)
-                index = -1
-                best_ob = copy.deepcopy(roll.obs[index])
+                if sub_goal_strategy == 'best':
+                    score = [score_fn(state=ob[:2],boundary=ob[2:6]) for ob in roll.obs]
+                    best_ob = copy.deepcopy(roll.obs[np.argmax(score)])
+                elif sub_goal_strategy == 'random':
+                    index = random.randint(0, len(roll)-1)
+                    best_ob = copy.deepcopy(roll.obs[index])
+                elif sub_goal_strategy == 'last':
+                    best_ob = copy.deepcopy(roll.obs[-1])
                 # best_score_list.append(np.max(score))
                 best_score_list.append(score_fn(state=best_ob[:2], boundary=best_ob[2:6]))
                 new_bound = env.get_boundary(best_ob[0], best_ob[1])
@@ -113,8 +120,14 @@ def train(
                 new_goal = roll.obs[0][-3:]
                 best_score_list.append(0)
             else:
-                # index = random.randint(0, len(roll)-1)
-                best_ob = copy.deepcopy(roll.obs[-1])
+                if sub_goal_strategy == 'best':
+                    score = [score_fn(achieved_goal=ob[:3],desired_goal=ob[-3:]) for ob in roll.obs]
+                    best_ob = copy.deepcopy(roll.obs[np.argmax(score)])
+                elif sub_goal_strategy == 'random':
+                    index = random.randint(0, len(roll)-1)
+                    best_ob = copy.deepcopy(roll.obs[index])
+                elif sub_goal_strategy == 'last':
+                    best_ob = copy.deepcopy(roll.obs[-1])
                 best_score_list.append(score_fn(achieved_goal=best_ob[:3],desired_goal=best_ob[-3:]))
                 new_goal = best_ob[:3]
             experience_buffer.add(new_goal)
@@ -125,6 +138,7 @@ def train(
 
     def updateHer_pm3dd(batch_rollout, env, experience_buffer):
         rollouts = copy.deepcopy(batch_rollout.rollouts)
+
         env.goals = []
         best_score_list = []
         for roll in rollouts:
@@ -132,9 +146,16 @@ def train(
                 new_goal = roll.obs[0][3:6]
                 best_score_list.append(0)
             else:
-                # index = random.randint(0, len(roll)-1)
-                best_ob = copy.deepcopy(roll.obs[-1])
-                best_score_list.append(-goal_distance(best_ob[:3], best_ob[3:6]))
+                if sub_goal_strategy == 'best':
+                    score = [-env.goal_distance(ob[:3], ob[3:6]) for ob in roll.obs]
+                    best_ob = copy.deepcopy(roll.obs[np.argmax(score)])
+                elif sub_goal_strategy == 'random':
+                    index = random.randint(0, len(roll)-1)
+                    best_ob = copy.deepcopy(roll.obs[index])
+                elif sub_goal_strategy == 'last':
+                    best_ob = copy.deepcopy(roll.obs[-1])
+
+                best_score_list.append(-env.goal_distance(best_ob[:3], best_ob[3:6]))
                 new_goal = best_ob[:3]
 
             experience_buffer.add(new_goal)
@@ -143,6 +164,14 @@ def train(
         env.multi_goal = True
         env.goals+=experience_buffer.sample(n_rollout_per_actual_goal)
 
+    def video_callable(episode_id):
+        if monitor_period is None:
+            return False
+        else: return (t % monitor_period == 0) and (episode_id % 10 == 0)
+
+    if monitor_period is not None:
+        env_sub_goals = Monitor(env_sub_goals, logz.G.output_dir + '/video_sub_goal', force=True, resume=True, video_callable=video_callable)
+        env_actual_goal = Monitor(env_actual_goal, logz.G.output_dir + '/video_g_star', force=True, resume=True, video_callable=video_callable)
 
     # initialize random seed
     np.random.seed(seed)
@@ -173,12 +202,15 @@ def train(
     seqlen_ph = Input((), dtype=tf.int32)
 
     # Setup policy, experiment, graph
+    l2_regularizer = tf.contrib.layers.l2_regularizer(scale=l2_scale)
     policy = policies[policy_type](
         action_shape, 'discrete' if discrete else 'continuous', embedding_model, model_dim,
-        initial_logstd=init_logstd, n_layers_logits=n_layers, n_layers_value=n_layers, take_greedy_actions=False)
+        initial_logstd=init_logstd, n_layers_logits=n_layers, n_layers_value=n_layers, take_greedy_actions=False,
+        kernel_regularizer=l2_regularizer,
+        bias_regularizer=l2_regularizer)
 
     experiment = algorithms[algorithm](policy, distribution_strategy=tf.contrib.distribute.OneDeviceStrategy('/cpu:0'),
-                                      entcoeff=entcoeff)
+                                      entcoeff=entcoeff, learning_rate=learning_rate)
 
     graph = TrainGraph.from_experiment(experiment, (obs_ph, act_ph, val_ph, seqlen_ph))
 
@@ -192,14 +224,13 @@ def train(
     all_rewards_for_sub_g = []
 
     ex_buffer = ExperienceBuffer(bufferSize=ex_buffer_size)
-
     # Do Training
     for t in itertools.count():
-
-        rollouts_g_star = []
-        for _ in range(n_rollout_per_actual_goal):
-            rollouts_g_star.append(next(runner_actual_goal))  # type: ignore
-        batch_rollout_g_star  = BatchRollout(rollouts_g_star, variable_length=True, keep_as_separate_rollouts=True)
+        if t % n_updates_per_sub_goals == 0:
+            rollouts_g_star = []
+            for _ in range(n_rollout_per_actual_goal):
+                rollouts_g_star.append(next(runner_actual_goal))  # type: ignore
+            batch_rollout_g_star  = BatchRollout(rollouts_g_star, variable_length=True, keep_as_separate_rollouts=True)
 
         if use_her:
             # TODO make this part of the code better
@@ -220,27 +251,33 @@ def train(
         mean_episode_steps = np.mean(batch_rollout_g_star.seqlens)
         current_episode_num = runner_actual_goal.episode_num
 
+        viz_dir = os.path.join(logz.G.output_dir, 'viz')
+        if not os.path.exists(viz_dir):
+            os.makedirs(viz_dir)
 
-        logz.log_tabular("time", time.time()-start)
-        logz.log_tabular("iteration", t)
-        logz.log_tabular("g*_mean_reward", np.mean(batch_rollout_g_star.episode_rew))
-        logz.log_tabular("g*_std_reward", np.std(batch_rollout_g_star.episode_rew))
-        logz.log_tabular("g*_min_reward", np.min(batch_rollout_g_star.episode_rew))
-        logz.log_tabular("g*_max_reward", np.max(batch_rollout_g_star.episode_rew))
-        logz.log_tabular("g*_mean_ep_len", np.mean(batch_rollout_g_star.seqlens))
-        logz.log_tabular("g*_std_ep_len", np.std(batch_rollout_g_star.seqlens))
-        logz.log_tabular("g*_cur_ep_number", runner_actual_goal.episode_num)
+        if t % n_updates_per_sub_goals == 0:
+            logz.log_tabular("time", time.time()-start)
+            logz.log_tabular("iteration", t)
+            logz.log_tabular("g*_mean_reward", np.mean(batch_rollout_g_star.episode_rew))
+            logz.log_tabular("g*_std_reward", np.std(batch_rollout_g_star.episode_rew))
+            logz.log_tabular("g*_min_reward", np.min(batch_rollout_g_star.episode_rew))
+            logz.log_tabular("g*_max_reward", np.max(batch_rollout_g_star.episode_rew))
+            logz.log_tabular("g*_mean_ep_len", np.mean(batch_rollout_g_star.seqlens))
+            logz.log_tabular("g*_std_ep_len", np.std(batch_rollout_g_star.seqlens))
+            logz.log_tabular("g*_cur_ep_number", runner_actual_goal.episode_num)
 
-        logz.log_tabular("sub_g_mean_reward", np.mean(batch_rollout_sub_g.episode_rew))
-        logz.log_tabular("sub_g_std_reward", np.std(batch_rollout_sub_g.episode_rew))
-        logz.log_tabular("sub_g_min_reward", np.min(batch_rollout_sub_g.episode_rew))
-        logz.log_tabular("sub_g_max_reward", np.max(batch_rollout_sub_g.episode_rew))
-        logz.log_tabular("sub_g_mean_ep_len", np.mean(batch_rollout_sub_g.seqlens))
-        logz.log_tabular("sub_g_std_ep_len", np.std(batch_rollout_sub_g.seqlens))
-        logz.log_tabular("sub_g_cur_ep_number", runner_sub_goals.episode_num)
+            logz.log_tabular("sub_g_mean_reward", np.mean(batch_rollout_sub_g.episode_rew))
+            logz.log_tabular("sub_g_std_reward", np.std(batch_rollout_sub_g.episode_rew))
+            logz.log_tabular("sub_g_min_reward", np.min(batch_rollout_sub_g.episode_rew))
+            logz.log_tabular("sub_g_max_reward", np.max(batch_rollout_sub_g.episode_rew))
+            logz.log_tabular("sub_g_mean_ep_len", np.mean(batch_rollout_sub_g.seqlens))
+            logz.log_tabular("sub_g_std_ep_len", np.std(batch_rollout_sub_g.seqlens))
+            logz.log_tabular("sub_g_cur_ep_number", runner_sub_goals.episode_num)
 
-        logz.dump_tabular()
-        logz.pickle_tf_vars()
+            logz.dump_tabular()
+            logz.pickle_tf_vars()
+            g_star_viz_fname = os.path.join(viz_dir, '{}.dpkl'.format(t))
+            store_pickle({'ob': batch_rollout_g_star.obs}, g_star_viz_fname)
 
 
         if policy.action_space != 'discrete':
@@ -248,13 +285,7 @@ def train(
             actions = batch_rollout_sub_g.act
             print('STD_ACTIONS: {}'.format(np.exp(logstd)))
 
-        viz_dir = os.path.join(logz.G.output_dir, 'viz')
-        if not os.path.exists(viz_dir):
-            os.makedirs(viz_dir)
-
-        g_star_viz_fname = os.path.join(viz_dir, '{}.dpkl'.format(t))
         sub_g_viz_fname = os.path.join(viz_dir, '{}_tg.dpkl'.format(t))
-        store_pickle({'ob': batch_rollout_g_star.obs}, g_star_viz_fname)
         store_pickle({'ob': batch_rollout_sub_g.obs}, sub_g_viz_fname)
 
 

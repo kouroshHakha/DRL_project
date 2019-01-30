@@ -17,22 +17,19 @@ import time
 import scipy.ndimage
 import random
 
-def goal_distance(goal_a, goal_b):
-    assert goal_a.shape == goal_b.shape
-    return np.linalg.norm(goal_a - goal_b, axis=-1)
-
 class PointMass3dd(object):
-    def __init__(self, scale=200, multi_goal=False, sparse=False, threshold = 10):
+    def __init__(self, scale=250, multi_goal=False, sparse=False, threshold = 10):
         self.scale = int(scale)
         self.grid_size = self.scale ** 3
         self.multi_goal = multi_goal
         self.sparse = sparse
         self.action_meaning = [-10,-1,1,10]
         self.action_space = gym.spaces.Discrete(len(self.action_meaning)**3)
-        self.observation_space = gym.spaces.Box(-np.inf,np.inf, shape=(9,))
-        self.goals = [[scale-threshold]*3]
+        self.observation_space = gym.spaces.Box(-np.inf, np.inf, shape=(9,))
+        self.goals = [[scale-threshold*3]*3]
         self.spec = EnvSpec(id='PointMass3DDiscrete-v0', max_episode_steps=int(self.scale))
         self.threshold = threshold
+        self.action_base = len(self.action_meaning)
 
     def reset(self):
         self.state = np.array([0,0,0])
@@ -46,15 +43,15 @@ class PointMass3dd(object):
         return self.ob
 
     def step(self, action):
-        x = self.action_meaning[int(action % 4)]
-        y = self.action_meaning[int((action // 4) % 4)]
-        z = self.action_meaning[int((action // 4**2))]
+        x = self.action_meaning[int(action % self.action_base)]
+        y = self.action_meaning[int((action // self.action_base) % self.action_base)]
+        z = self.action_meaning[int((action // self.action_base**2))]
 
         # next state
         self.state = self.state + np.array([x,y,z])
         self.state = np.clip(self.state, 0, self.scale-1)
 
-        distance = goal_distance(self.state, self.goal)
+        distance = self.goal_distance(self.state, self.goal)
         if distance < self.threshold:
             done = True
             reward = 10
@@ -69,7 +66,12 @@ class PointMass3dd(object):
         return self.ob, reward, done, None
 
     def seed(self, seed):
-        pass
+        random.seed(seed)
+        np.random.seed(seed)
+
+    def goal_distance(self, goal_a, goal_b):
+        assert goal_a.shape == goal_b.shape
+        return np.linalg.norm(goal_a - goal_b, axis=-1)
 
 
 

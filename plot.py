@@ -48,13 +48,19 @@ the --legend flag and then provide a title for each logdir.
 
 """
 
-def plot_data(data, value="AverageReturn"):
+def plot_data(data, value="g*_mean_reward", normalize=False):
     if isinstance(data, list):
+        if normalize:
+            for d in data:
+                max_term = d[value].max(axis=0)
+                min_term = d[value].min(axis=0)
+                d[value] = (d[value] - min_term) / (max_term - min_term)
+
         data = pd.concat(data, ignore_index=True)
 
     sns.set(style="darkgrid", font_scale=1.5)
-    sns.tsplot(data=data, time="Iteration", value=value, unit="Unit", condition="Condition")
-    plt.legend(loc='best').draggable()
+    sns.tsplot(data=data, time="iteration", value=value, unit="Unit", condition="Condition")
+    plt.legend(loc='lower right').draggable()
     plt.show()
 
 
@@ -92,7 +98,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('logdir', nargs='*')
     parser.add_argument('--legend', nargs='*')
-    parser.add_argument('--value', default='AverageReturn', nargs='*')
+    parser.add_argument('--value', default='g*_mean_reward', nargs='*')
+    parser.add_argument('--normalize', action='store_true', default=False)
     args = parser.parse_args()
 
     use_legend = False
@@ -114,7 +121,7 @@ def main():
     else:
         values = [args.value]
     for value in values:
-        plot_data(data, value=value)
+        plot_data(data, value=value, normalize=args.normalize)
 
 if __name__ == "__main__":
     main()

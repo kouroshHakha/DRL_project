@@ -43,7 +43,8 @@ class PointMass(Env):
             high=np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0,5.0, 5.0]))
         self.action_space = gym.spaces.Discrete(48)
         self.action_meaning = [-5,-3,-1,0,1,3,5]
-        self.boundaries = [[2,8,44,50], [2, 8, 1, 4], [30, 36, 35, 38], [62,68, 1, 7], [142, 148, 51, 57], [192, 198, 192, 198]] #  #[44, 47, 1, 7],
+        # self.action_meaning = [-10,-5,-1,0,1,5,10]
+        self.boundaries = [[2,8,44,50], [2, 8, 1, 4], [30, 36, 35, 38], [62, 68, 1, 7], [72, 78, 21, 27], [142, 148, 51, 57], [192, 198, 192, 198], [5,10,20,25]] #  #[44, 47, 1, 7],
         self.fixed_goal_idx = 4
         self.spec = EnvSpec(id='PointMass-v4', max_episode_steps=int(max_episode_steps_coeff*self.scale))
 
@@ -157,6 +158,8 @@ class PointMass(Env):
         images = []
         # for cnt, i in zip(range(len(ob_indices)), ob_indices):
         for i in range(int(len(ob_array)*0.2)):
+            if not np.any(ob_array[i]):
+                continue
             a = np.zeros(shape=[self.scale, self.scale])
             a[first_ob_array[i,0], first_ob_array[i,1]] = 1
             a[boundary[i,0]:(boundary[i,1]+1), boundary[i,2]:(boundary[i,3]+1)]= 0.5
@@ -165,6 +168,15 @@ class PointMass(Env):
 
         dirname = os.path.dirname(fname)
         imageio.mimsave(os.path.join(dirname, '{}.gif'.format(itr)), images)
+
+        if itr.endswith('tg.dpkl'):
+            b = np.zeros(shape=[self.scale, self.scale])
+            for i in range(len(ob_array)):
+                if not np.any(ob_array[i]):
+                    continue
+                b[boundary[i,0]:(boundary[i,1]+1), boundary[i,2]:(boundary[i,3]+1)]+=1
+            b = b/np.max(b)
+            imageio.imsave(os.path.join(dirname, '{}.png'.format(itr)), b)
 
     def create_gif(self, dirname, density=False):
         images = []
@@ -185,7 +197,8 @@ class PointMass(Env):
                 continue
             iters = [s for s in os.listdir(path) if s.endswith(".dpkl")]
             for i in tqdm(range(len(iters))):
-                self.visualize(iters[i], os.path.join(dirname, s + '/'+ str(iters[i])))
+                if not os.path.exists(os.path.join(path, '{}.gif'.format(iters[i]))):
+                    self.visualize(iters[i], os.path.join(dirname, s + '/'+ str(iters[i])))
                 # self.create_gif(os.path.join(dirname, str(s)))
 
 def debug():

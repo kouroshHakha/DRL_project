@@ -1,11 +1,11 @@
-dsn_netlist: "/home/ksettaluri6/ckt_design_automation/framework/netlist/two_stage_opamp.cir"
+dsn_netlist: "/home/ksettaluri6/DRL_project/framework/netlist/two_stage_opamp.cir"
 num_process: 1
 
 target_specs:
-  gain_min: !!float 300
-  ugbw_min: !!float 1000000.0
-  phm_min:  !!float 60
-  ibias_max: !!float 0.0001
+  gain_min: !!python/tuple [0, 300]
+  ugbw_min: !!python/tuple [0, 1000000.0]
+  phm_min:  !!python/tuple [0, 60]
+  ibias_max: !!python/tuple [0, 0.0001]
 
 params:
   mp1:  !!python/tuple [1, 100, 1]

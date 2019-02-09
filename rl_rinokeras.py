@@ -38,6 +38,8 @@ parser.add_argument('--logstd', type=float, default=0, help='initial_logstd') #h
 parser.add_argument('--seed', '-s', type=int, default=10) #determines what random seed you run on
 parser.add_argument('--mobj', action='store_true', help='multiple objectives')
 parser.add_argument('--sparse', action='store_true', help='determines sparsity of the reward') #probably won't use
+parser.add_argument('--mobj_gen', action='store_true', help='whether to run difference mobj during validation')
+
 args = parser.parse_args()
 
 # setup the log folder
@@ -54,7 +56,7 @@ if args.env == 'pm4':
     env_validation = PointMass_v4(sparse=args.sparse)
 elif args.env == 'ckt-v2':
     env = CSAmpDiscrete(multi_goal=args.mobj, sparse=args.sparse)
-    env_validation = CSAmpDiscrete(sparse=args.sparse)
+    env_validation = CSAmpDiscrete(sparse=args.sparse, generalize_test=args.mobj_gen)
 elif args.env == 'opamp':
     env = TwoStageAmp(multi_goal=args.mobj, sparse=args.sparse)
     env_validation = TwoStageAmp(sparse=args.sparse)

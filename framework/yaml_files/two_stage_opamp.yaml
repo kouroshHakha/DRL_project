@@ -1,4 +1,4 @@
-dsn_netlist: "/home/ksettaluri6/DRL_project/framework/netlist/two_stage_opamp.cir"
+dsn_netlist: "/Users/ameerh/autobag/DRL_project/framework/netlist/two_stage_opamp.cir"
 num_process: 1
 
 target_specs:

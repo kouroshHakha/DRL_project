@@ -16,19 +16,7 @@ import statistics
 import os
 from framework.wrapper.TwoStageClass import TwoStageClass
 import IPython
-
-## helper functions for working with files
-def rel_path(fname):
-    return os.path.join(os.path.dirname(__file__), fname)
-
-def load_array(fname):
-    with open(rel_path(fname), "rb") as f:
-        arr = np.load(f)
-    return arr
-
-def rel_diff(curr, desired):
-    diff = (curr-desired)/np.mean(desired)#statistics.mean([curr,desired])
-    return diff
+import itertools
 
 #way of ordering the way a yaml file is read
 class OrderedDictYAMLLoader(yaml.Loader):
@@ -62,11 +50,6 @@ class OrderedDictYAMLLoader(yaml.Loader):
             mapping[key] = value
         return mapping
 
-def one_hot(num, base):
-    a = np.zeros(base)
-    a[num] = 1
-    return a
-
 class TwoStageAmp(gym.Env):
     metadata = {'render.modes': ['human']}
 
@@ -76,9 +59,8 @@ class TwoStageAmp(gym.Env):
     framework_path = os.path.abspath(framework.__file__).split("__")
     CIR_YAML = framework_path[0]+"/yaml_files/two_stage_opamp.yaml"
 
-    def __init__(self, sparse=False, multi_goal=False):
+    def __init__(self, multi_goal=False):
 
-        self.sparse = sparse
         self.env_steps = 0
         with open(TwoStageAmp.CIR_YAML, 'r') as f:
             yaml_data = yaml.load(f, OrderedDictYAMLLoader)
@@ -90,7 +72,6 @@ class TwoStageAmp(gym.Env):
         self.specs = OrderedDict(sorted(specs.items(), key=lambda k: k[0]))
         self.specs_ideal = []
         self.specs_id = list(self.specs.keys())
-        print(self.specs)
         self.fixed_goal_idx = -1 
 
         self.num_os = len(list(self.specs.values())[0])
@@ -112,8 +93,8 @@ class TwoStageAmp(gym.Env):
         self.action_meaning = [-1,0,2]                  
         self.action_space = spaces.Discrete(len(self.action_meaning)**len(self.params_id))
         self.observation_space = spaces.Box(
-            low=np.array([TwoStageAmp.PERF_LOW]*2*len(self.specs_id)+[-5.0,-5.0,-5.0,-5.0,-5.0,5.0,5.0]),
-            high=np.array([TwoStageAmp.PERF_HIGH]*2*len(self.specs_id)+[5.0,5.0,5.0,5.0,5.0,5.0,5.0]))
+            low=np.array([TwoStageAmp.PERF_LOW]*2*len(self.specs_id)+len(self.params_id)*[1]),
+            high=np.array([TwoStageAmp.PERF_HIGH]*2*len(self.specs_id)+len(self.params_id)*[1]))
 
         #initialize current param/spec observations
         self.cur_specs = np.zeros(len(self.specs_id), dtype=np.float32)
@@ -125,17 +106,9 @@ class TwoStageAmp(gym.Env):
                 self.global_g.append(float(spec[self.fixed_goal_idx]))
         self.global_g = np.array(self.global_g)
 
-        #Dumb way of initializing action space, works by creating all combos for each parameter
-        self.action_arr = []
-        for a in self.action_meaning:
-            for b in self.action_meaning:
-                for c in self.action_meaning:
-                    for d in self.action_meaning:
-                        for e in self.action_meaning:
-                            for f in self.action_meaning:
-                                for g in self.action_meaning:
-                                    self.action_arr.append([a,b,c,d,e,f,g])
- 
+        #Initializing action space, works by creating all combos for each parameter
+        self.action_arr = list(itertools.product(*([self.action_meaning for i in range(len(self.params_id))])))
+            
     def reset(self, z=None, sigma=0.2):
 
         #if multi-goal is selected, every time reset occurs, it will select a different design spec as objective
@@ -143,7 +116,6 @@ class TwoStageAmp(gym.Env):
             self.specs_ideal = self.global_g 
         else: 
             rand_oidx = random.randint(0,self.num_os-1)
-            #self.specs_ideal = self.specs_list[rand_oidx]
             self.specs_ideal = []
             for spec in list(self.specs.values()):
                 self.specs_ideal.append(spec[rand_oidx])
@@ -174,7 +146,7 @@ class TwoStageAmp(gym.Env):
 
         #Take action that RL agent returns to change current params
         self.cur_params_idx = self.cur_params_idx + np.array(self.action_arr[int(action)])
-        self.cur_params_idx = np.clip(self.cur_params_idx, [0,0,0,0,0,0,0], [(len(param_vec)-1) for param_vec in self.params])
+        self.cur_params_idx = np.clip(self.cur_params_idx, [0]*len(self.params_id), [(len(param_vec)-1) for param_vec in self.params])
 
         #Get current specs and normalize
         self.cur_specs = self.update(self.cur_params_idx)
@@ -196,10 +168,6 @@ class TwoStageAmp(gym.Env):
         self.env_steps = self.env_steps + 1
         return self.ob, reward, done, None 
 
-    def unlookup(self, norm_spec, goal_spec):
-        spec = np.multiply(norm_spec, goal_spec) + goal_spec
-        return spec
-
     def lookup(self, spec, goal_spec):
         norm_spec = (spec-goal_spec)/goal_spec
         return norm_spec
@@ -216,10 +184,7 @@ class TwoStageAmp(gym.Env):
             if rel_spec < 0:
                 reward += rel_spec
 
-        if self.sparse:
-            return -1 if reward < -0.05 else 10
-        else:
-            return reward if reward < -0.05 else 10+np.sum(rel_specs)
+        return reward if reward < -0.05 else 10+np.sum(rel_specs)
 
     def update(self, params_idx):
         """

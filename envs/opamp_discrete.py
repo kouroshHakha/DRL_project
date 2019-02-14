@@ -90,7 +90,8 @@ class TwoStageAmp(gym.Env):
         #observation space only used to get how many there are for RL algorithm, actual range doesnt matter
         dsn_netlist = yaml_data['dsn_netlist']
         self.sim_env = TwoStageClass(design_netlist=dsn_netlist)
-        self.action_meaning = [-1,0,2]                  
+        self.action_meaning = [-1,0,2] 
+	# spaces.Tuple([Discrete(3)]*len(self.params_id)) 
         self.action_space = spaces.Discrete(len(self.action_meaning)**len(self.params_id))
         self.observation_space = spaces.Box(
             low=np.array([TwoStageAmp.PERF_LOW]*2*len(self.specs_id)+len(self.params_id)*[1]),

@@ -46,8 +46,8 @@ class TwoStageClass(NgSpiceWrapper):
 
     def parse_output(self, output_path):
 
-        ac_fname = os.path.join(output_path, 'ac.csv')
-        dc_fname = os.path.join(output_path, 'dc.csv')
+        ac_fname = os.path.join(output_path, 'ac.csv.data')
+        dc_fname = os.path.join(output_path, 'dc.csv.data')
 
         if not os.path.isfile(ac_fname) or not os.path.isfile(dc_fname):
             print("ac/dc file doesn't exist: %s" % output_path)

@@ -25,7 +25,7 @@ import argparse
 
 #Inputs to RL algorithm
 #Example of running file:  
-#   python rl_rinokeras.py --expname descriptiveNameforExpHere --env opamp --policy standard --alg ppo
+#   python rl_rinokeras.py --expname descriptiveNameforExpHere --env ckt-v2 --policy standard --alg ppo
 
 parser = argparse.ArgumentParser('Rinokeras RL Example Script')
 parser.add_argument('--expname', type=str, help='Name of the experiment you are running')

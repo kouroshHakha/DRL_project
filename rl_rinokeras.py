@@ -9,12 +9,8 @@ from util import ExperienceBuffer
 import tensorflow as tf
 from tensorflow.keras.layers import Dense, Input
 
-from envs.pointmass3 import PointMass as PointMass_v3
-from envs.pointmass4 import PointMass as PointMass_v4
-from envs.pointmass5_seq_with_int_rewards import PointMass as PointMass_v5
-from envs.ckt_env_discrete import CSAmp as CSAmpDiscrete
-from envs.pointmass4_cont import PointMass4Cont
 from envs.opamp_discrete import TwoStageAmp
+from envs.opamp_full_discrete import TwoStageAmp as TwoStageAmpFull
 
 from rinokeras.rl.env_runners import PGEnvironmentRunner, BatchRollout
 from rinokeras.rl.policies import StandardPolicy, LSTMPolicy
@@ -37,7 +33,6 @@ parser.add_argument('--alg', type=str, choices=['vpg', 'ppo'], default='vpg',
 parser.add_argument('--logstd', type=float, default=0, help='initial_logstd') #how to initialize weights
 parser.add_argument('--seed', '-s', type=int, default=10) #determines what random seed you run on
 parser.add_argument('--mobj', action='store_true', help='multiple objectives')
-parser.add_argument('--sparse', action='store_true', help='determines sparsity of the reward') #probably won't use
 parser.add_argument('--mobj_gen', action='store_true', help='whether to run difference mobj during validation')
 
 args = parser.parse_args()
@@ -51,15 +46,12 @@ if not(os.path.exists(logdir)):
     os.makedirs(logdir)
 
 # instantiates gym environment  
-if args.env == 'pm4':
-    env = PointMass_v4(multi_goal=args.mobj, sparse=args.sparse)
-    env_validation = PointMass_v4(sparse=args.sparse)
-elif args.env == 'ckt-v2':
-    env = CSAmpDiscrete(multi_goal=args.mobj, sparse=args.sparse)
-    env_validation = CSAmpDiscrete(sparse=args.sparse, generalize_test=args.mobj_gen)
-elif args.env == 'opamp':
-    env = TwoStageAmp(multi_goal=args.mobj, sparse=args.sparse)
-    env_validation = TwoStageAmp(sparse=args.sparse)
+if args.env == 'opamp':
+    env = TwoStageAmp(multi_goal=args.mobj, generalize=False)
+    env_validation = TwoStageAmp(generalize=True)
+elif args.env == 'opamp_full':
+    env = TwoStageAmpFull(multi_goal=args.mobj)
+    env_validation = TwoStageAmpFull()
 
 # initialize random seed
 np.random.seed(args.seed)
@@ -171,7 +163,7 @@ for t in itertools.count():
 
     #numpy array that saves the validation reward (use for plotting) 
     np.save('-'.join([args.expname, args.env, args.policy, args.alg, 'logstd=' + str(args.logstd) + 
-        '-mobj=' + str(args.mobj) + '-sparse=' + str(args.sparse) ]) + '_' + str(n_rollouts_per_batch_validation) 
+        '-mobj=' + str(args.mobj)]) + '_' + str(n_rollouts_per_batch_validation) 
         + '_' + str(n_rollouts_per_batch_training) + '.npy', np.array(all_valid_rewards))
 
     #run the agent 
@@ -181,5 +173,5 @@ for t in itertools.count():
         loss = graph.run('update', (batch_rollout.obs, batch_rollout.act, batch_rollout.val, batch_rollout.seqlens))
 
     #exit training if it's taking too long
-    if t > 1000:
+    if t > 100:
         break

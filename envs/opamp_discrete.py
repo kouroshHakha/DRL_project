@@ -166,7 +166,7 @@ class TwoStageAmp(gym.Env):
 
         self.ob = np.concatenate([cur_spec_norm, self.specs_ideal_norm, self.cur_params_idx])
         self.env_steps = self.env_steps + 1
-        return self.ob, reward, done, None 
+        return self.ob, reward, done, {}
 
     def lookup(self, spec, goal_spec):
         norm_spec = (spec-goal_spec)/goal_spec

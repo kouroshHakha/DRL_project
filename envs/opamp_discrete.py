@@ -59,7 +59,7 @@ class TwoStageAmp(gym.Env):
     framework_path = os.path.abspath(framework.__file__).split("__")
     CIR_YAML = framework_path[0]+"/yaml_files/two_stage_opamp.yaml"
 
-    def __init__(self, multi_goal=False):
+    def __init__(self, multi_goal=False, generalize=False):
 
         self.env_steps = 0
         with open(TwoStageAmp.CIR_YAML, 'r') as f:
@@ -68,7 +68,11 @@ class TwoStageAmp(gym.Env):
         self.multi_goal = multi_goal
         
         # design specs
-        specs = yaml_data['target_specs']
+        if generalize == False:
+            specs = yaml_data['target_specs']
+        else:
+            specs = yaml_data['target_valid_specs']
+
         self.specs = OrderedDict(sorted(specs.items(), key=lambda k: k[0]))
         self.specs_ideal = []
         self.specs_id = list(self.specs.keys())

@@ -57,7 +57,7 @@ class TwoStageAmp(gym.Env):
     PERF_HIGH = 0
 
     framework_path = os.path.abspath(framework.__file__).split("__")
-    CIR_YAML = framework_path[0]+"/yaml_files/two_stage_opamp.yaml"
+    CIR_YAML = framework_path[0]+"yaml_files/two_stage_opamp.yaml"
 
     def __init__(self, multi_goal=False, generalize=False):
 
@@ -71,7 +71,7 @@ class TwoStageAmp(gym.Env):
         if generalize == False:
             specs = yaml_data['target_specs']
         else:
-            specs = yaml_data['target_valid_specs']
+            specs = yaml_data['target_valid_spec']
 
         self.specs = OrderedDict(sorted(specs.items(), key=lambda k: k[0]))
         self.specs_ideal = []
@@ -92,7 +92,7 @@ class TwoStageAmp(gym.Env):
         #initialize sim environment
         #discrete action space for now, parameter values can move by either -1, 0, or 2
         #observation space only used to get how many there are for RL algorithm, actual range doesnt matter
-        dsn_netlist = yaml_data['dsn_netlist']
+        dsn_netlist = TwoStageAmp.framework_path[0] + yaml_data['dsn_netlist']
         self.sim_env = TwoStageClass(design_netlist=dsn_netlist)
         self.action_meaning = [-1,0,2] 
 	# spaces.Tuple([Discrete(3)]*len(self.params_id)) 

@@ -18,6 +18,7 @@ from rinokeras.rl.trainers import PolicyGradient, PPO
 from rinokeras.train import TrainGraph
 import IPython
 import argparse
+import time
 
 #Inputs to RL algorithm
 #Example of running file:  
@@ -45,6 +46,10 @@ logdir = os.path.join('data', logdir + '/0')
 if not(os.path.exists(logdir)):
     os.makedirs(logdir)
 
+# setup where all numpy files are saved
+if not(os.path.exists(args.expname)):
+    os.makedirs(args.expname)
+
 # instantiates gym environment  
 if args.env == 'opamp':
     env = TwoStageAmp(multi_goal=args.mobj, generalize=False)
@@ -69,7 +74,7 @@ discrete = not isinstance(env.action_space, gym.spaces.Box)
 action_shape = (env.action_space.n,) if discrete else env.action_space.shape
 model_dim = 64                                      #Num neurons for each layer
 gamma = 0.95                                        #discount factor, dampen agent's choice of action
-n_rollouts_per_batch_validation = 10                #Number of rollouts used for validation 
+n_rollouts_per_batch_validation = 4                 #Number of rollouts used for validation 
 n_rollouts_per_batch_training = 20                  #Number of rollouts used for training
 max_ep_steps= 60                                    #Maximum number of steps in each trajectory 
 n_updates_per_batch = 1 if args.alg == 'vpg' else 3 #Efficient updates if you use PPO
@@ -105,6 +110,8 @@ all_valid_rewards = []
 all_rewards = []
 
 # Do Training
+start_time = time.time()
+
 for t in itertools.count():
 
     #Creates rollouts for validation 
@@ -161,17 +168,23 @@ for t in itertools.count():
     with open(os.path.join(logdir, 'tg_{}.dpkl'.format(t)), 'wb') as f:
         pickle.dump(obs_log_temp_goals, f)
 
-    #numpy array that saves the validation reward (use for plotting) 
-    np.save('-'.join([args.expname, args.env, args.policy, args.alg, 'logstd=' + str(args.logstd) + 
-        '-mobj=' + str(args.mobj)]) + '_' + str(n_rollouts_per_batch_validation) 
-        + '_' + str(n_rollouts_per_batch_training) + '.npy', np.array(all_valid_rewards))
+    #numpy array that saves training/validation reward (use for plotting)
+    np.save(os.path.join(args.expname, '-'.join([args.env , args.policy, args.alg, 'logstd=' + str(args.logstd) + '-mobj=' + str(args.mobj),'batch_valid_roll'+str(n_rollouts_per_batch_validation), 'batch_train_roll'+str(n_rollouts_per_batch_training),'training.npy'])), np.array(all_rewards))
+    
+    np.save(os.path.join(args.expname,'-'.join([args.env, args.policy, args.alg, 'logstd=' + str(args.logstd) + '-mobj=' + str(args.mobj), 'batch_valid_roll'+str(n_rollouts_per_batch_validation), 'batch_train_roll'+str(n_rollouts_per_batch_training), 'validation.npy'])), np.array(all_valid_rewards))
 
+    #numpy array that saves the rollouts during training and validation to plot
+    np.save(os.path.join(args.expname,'traj_plots'),validation_batch_rollout.rew)
+    
     #run the agent 
     if args.alg == 'ppo':
         experiment.update_old_model()
     for _ in range(n_updates_per_batch):
         loss = graph.run('update', (batch_rollout.obs, batch_rollout.act, batch_rollout.val, batch_rollout.seqlens))
 
-    #exit training if it's taking too long
-    if t > 100:
+    #stopping criteria
+    if (mean_episode_reward > -0.05) or (t > 1000):
+        print('Total run time of algorithm: ' + str(time.time()-start_time))
         break
+
+

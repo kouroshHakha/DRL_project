@@ -66,12 +66,22 @@ class TwoStageAmp(gym.Env):
             yaml_data = yaml.load(f, OrderedDictYAMLLoader)
 
         self.multi_goal = multi_goal
-        
+        self.generalize = generalize
+
         # design specs
         if generalize == False:
             specs = yaml_data['target_specs']
         else:
-            specs = yaml_data['target_valid_spec']
+            specs_valid = yaml_data['target_valid_specs']
+            specs_train = yaml_data['target_specs']
+            specs_val = []
+            for i,valid_arr in enumerate(list(specs_valid.values())):
+                specs_val.append(list(specs_train.values())[i]+valid_arr)
+            specs = specs_train
+            i = 0
+            for key,value in specs.items():
+                specs[key] = specs_val[i]
+                i+=1
 
         self.specs = OrderedDict(sorted(specs.items(), key=lambda k: k[0]))
         self.specs_ideal = []
@@ -95,7 +105,8 @@ class TwoStageAmp(gym.Env):
         dsn_netlist = TwoStageAmp.framework_path[0] + yaml_data['dsn_netlist']
         self.sim_env = TwoStageClass(design_netlist=dsn_netlist)
         self.action_meaning = [-1,0,2] 
-	# spaces.Tuple([Discrete(3)]*len(self.params_id)) 
+	
+        # spaces.Tuple([Discrete(3)]*len(self.params_id)) 
         self.action_space = spaces.Discrete(len(self.action_meaning)**len(self.params_id))
         self.observation_space = spaces.Box(
             low=np.array([TwoStageAmp.PERF_LOW]*2*len(self.specs_id)+len(self.params_id)*[1]),
@@ -113,19 +124,32 @@ class TwoStageAmp(gym.Env):
 
         #Initializing action space, works by creating all combos for each parameter
         self.action_arr = list(itertools.product(*([self.action_meaning for i in range(len(self.params_id))])))
-            
+        
+        #objective number (used for validation)
+        self.obj_idx = 0
     def reset(self, z=None, sigma=0.2):
 
         #if multi-goal is selected, every time reset occurs, it will select a different design spec as objective
-        if self.multi_goal == False:
-            self.specs_ideal = self.global_g 
-        else: 
-            rand_oidx = random.randint(0,self.num_os-1)
+        if self.generalize == True:
+            if self.obj_idx > self.num_os-1:
+                self.obj_idx = 0
+                print('Re-running objectives, valid rollout might be too large') 
+            idx = self.obj_idx
+            self.obj_idx += 1
             self.specs_ideal = []
             for spec in list(self.specs.values()):
-                self.specs_ideal.append(spec[rand_oidx])
+                self.specs_ideal.append(spec[idx])
             self.specs_ideal = np.array(self.specs_ideal)
-
+        else:
+            if self.multi_goal == False:
+                self.specs_ideal = self.global_g 
+            else:
+                idx = random.randint(0,self.num_os-1)
+                self.specs_ideal = []
+                for spec in list(self.specs.values()):
+                    self.specs_ideal.append(spec[idx])
+                self.specs_ideal = np.array(self.specs_ideal)
+    
         #applicable only when you have multiple goals, normalizes everything to some global_g
         self.specs_ideal_norm = self.lookup(self.specs_ideal, self.global_g)
 

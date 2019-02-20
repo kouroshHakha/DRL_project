@@ -52,8 +52,8 @@ class TwoStageClass(NgSpiceWrapper):
         if not os.path.isfile(ac_fname) or not os.path.isfile(dc_fname):
             print("ac/dc file doesn't exist: %s" % output_path)
 
-        ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=0)
-        dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=0)
+        ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
+        dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=1)
         freq = ac_raw_outputs[:, 0]
         vout_real = ac_raw_outputs[:, 1]
         vout_imag = ac_raw_outputs[:, 2]

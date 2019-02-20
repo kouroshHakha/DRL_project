@@ -14,7 +14,7 @@ debug = False
 
 class NgSpiceWrapper(object):
 
-    BASE_TMP_DIR = os.path.abspath("/tmp/"+os.environ['USER']+"/circuit_drl")
+    BASE_TMP_DIR = os.path.abspath("/tmp/"+os.environ['USER']+"/circuit_drl"+str(os.getpid()))
 
     def __init__(self, design_netlist):
 
@@ -148,15 +148,24 @@ class CsAmpClass(NgSpiceWrapper):
         return spec
 
     def parse_output(self, output_path):
-        
-        ac_fname = os.path.join(output_path, 'ac.csv')
-        dc_fname = os.path.join(output_path, 'dc.csv')
+    
+        output = str(subprocess.check_output("ngspice -v", shell=True))
 
         if not os.path.isfile(ac_fname) or not os.path.isfile(dc_fname):
             print("ac/dc file doesn't exist: %s" % output_path)
 
-        ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=0)
-        dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=0)
+        if "26" in output: 
+            ac_fname = os.path.join(output_path, 'ac.csv')
+            dc_fname = os.path.join(output_path, 'dc.csv')
+            ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=0)
+            dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=0)
+
+        else:
+            ac_fname = os.path.join(output_path, 'ac.csv.data')
+            dc_fname = os.path.join(output_path, 'dc.csv.data')
+            ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
+            dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=1)
+        
         freq = ac_raw_outputs[:, 0]
         vout = ac_raw_outputs[:, 1]
         ibias = -dc_raw_outputs[1]

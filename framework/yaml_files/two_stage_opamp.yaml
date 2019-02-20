@@ -1,11 +1,17 @@
-dsn_netlist: "/Users/ameerh/autobag/DRL_project/framework/netlist/two_stage_opamp.cir"
+dsn_netlist: "netlist/two_stage_opamp.cir"
 num_process: 1
 
 target_specs:
-  gain_min: !!python/tuple [0, 300]
-  ugbw_min: !!python/tuple [0, 1000000.0]
-  phm_min:  !!python/tuple [0, 60]
-  ibias_max: !!python/tuple [0, 0.0001]
+  gain_min: !!python/tuple [200, 300]
+  ugbw_min: !!python/tuple [1050000.0, 1000000.0]
+  phm_min:  !!python/tuple [60, 60]
+  ibias_max: !!python/tuple [0.0001, 0.0001]
+
+target_valid_specs:
+  gain_min: !!python/tuple [250, 350]
+  ugbw_min: !!python/tuple [950000.0, 950000.0]
+  phm_min:  !!python/tuple [60,60]
+  ibias_max: !!python/tuple [0.0001, 0.0001]
 
 params:
   mp1:  !!python/tuple [1, 100, 1]

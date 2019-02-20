@@ -16,7 +16,7 @@ import numpy as np
 from scipy import interpolate
 import random as rnd
 debug = True
-
+import subprocess
 from framework.wrapper.ngspice_wrapper import NgSpiceWrapper
 
 class TwoStageClass(NgSpiceWrapper):
@@ -28,7 +28,6 @@ class TwoStageClass(NgSpiceWrapper):
         :return
             result: dict(spec_kwds, spec_value)
         """
-
         # use parse output here
         freq, vout,  ibias = self.parse_output(output_path)
         gain = self.find_dc_gain(vout)
@@ -46,14 +45,22 @@ class TwoStageClass(NgSpiceWrapper):
 
     def parse_output(self, output_path):
 
-        ac_fname = os.path.join(output_path, 'ac.csv.data')
-        dc_fname = os.path.join(output_path, 'dc.csv.data')
+        output = str(subprocess.check_output("ngspice -v", shell=True))
+
+        if not("26" in output):
+            ac_fname = os.path.join(output_path, 'ac.csv')
+            dc_fname = os.path.join(output_path, 'dc.csv')
+            ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
+            dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=1)    
+        else: 
+            ac_fname = os.path.join(output_path, 'ac.csv.data')
+            dc_fname = os.path.join(output_path, 'dc.csv.data')
+            ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=0)
+            dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=0)
 
         if not os.path.isfile(ac_fname) or not os.path.isfile(dc_fname):
             print("ac/dc file doesn't exist: %s" % output_path)
 
-        ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
-        dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=1)
         freq = ac_raw_outputs[:, 0]
         vout_real = ac_raw_outputs[:, 1]
         vout_imag = ac_raw_outputs[:, 2]

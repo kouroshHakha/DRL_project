@@ -17,7 +17,7 @@ tune.run_experiments({
             "sgd_minibatch_size": 70,
             "horizon": 50,
             "num_gpus": 0,
-            "num_workers": 3,
+            "num_workers": 0,
             },
     },
 })

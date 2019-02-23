@@ -60,7 +60,7 @@ class TwoStageAmp(gym.Env):
     CIR_YAML = framework_path[0]+"/yaml_files/two_stage_opamp.yaml"
 
     def __init__(self, multi_goal=False):
-        print("@@@@@@213123123@@@@@@@@@@@@@@@@@")
+        #print("@@@@@@213123123@@@@@@@@@@@@@@@@@")
 
         self.env_steps = 0
         with open(TwoStageAmp.CIR_YAML, 'r') as f:
@@ -90,11 +90,12 @@ class TwoStageAmp(gym.Env):
         #initialize sim environment
         #discrete action space for now, parameter values can move by either -1, 0, or 2
         #observation space only used to get how many there are for RL algorithm, actual range doesnt matter
-        dsn_netlist = yaml_data['dsn_netlist']
+        dsn_netlist = TwoStageAmp.framework_path[0] + yaml_data['dsn_netlist']
         self.sim_env = TwoStageClass(design_netlist=dsn_netlist)
         self.action_meaning = [-1,0,2]
         #print(len(self.params_id))
-        self.action_space = spaces.Tuple([spaces.Discrete(3)]*len(self.params_id))
+        #self.action_space = spaces.Box(low=np.array(len(self.params_id)*[-1]), high=np.array(len(self.params_id)*[1]))
+        self.action_space = spaces.Tuple([spaces.Discrete(len(self.action_meaning))]*len(self.params_id))
         self.observation_space = spaces.Box(
             low=np.array([TwoStageAmp.PERF_LOW]*2*len(self.specs_id)+len(self.params_id)*[1]),
             high=np.array([TwoStageAmp.PERF_HIGH]*2*len(self.specs_id)+len(self.params_id)*[1]))
@@ -113,7 +114,7 @@ class TwoStageAmp(gym.Env):
         self.action_arr = list(itertools.product(*([self.action_meaning for i in range(len(self.params_id))])))
 
     def reset(self, z=None, sigma=0.2):
-        print("@@@@@@@@@@@@@@@@@@@@@@@")
+        #print("@@@@@@@@@@@@@@@@@@@@@@@")
         #if multi-goal is selected, every time reset occurs, it will select a different design spec as objective
         if self.multi_goal == False:
             self.specs_ideal = self.global_g
@@ -146,14 +147,11 @@ class TwoStageAmp(gym.Env):
         :param action: is vector with elements between 0 and 1 mapped to the index of the corresponding parameter
         :return:
         """
-        print(action)
         #Take action that RL agent returns to change current params
         #print(action)
-        #print(self.action_space)
-#        print(self.action_arr[int(action)])
-        self.cur_params_idx = self.cur_params_idx + np.array([e[0] for e in action]) #np.array(self.action_arr[int(action)])
-        self.cur_params_idx = np.clip(self.cur_params_idx, [0]*len(self.params_id), [(len(param_vec)-1) for param_vec in self.params])
 
+        self.cur_params_idx = self.cur_params_idx + np.array(action)# np.array([e[0] for e in action])
+        self.cur_params_idx = np.clip(self.cur_params_idx, [0]*len(self.params_id), [(len(param_vec)-1) for param_vec in self.params])
         #IPython.embed()
         #Get current specs and normalize
         self.cur_specs = self.update(self.cur_params_idx)
@@ -172,7 +170,7 @@ class TwoStageAmp(gym.Env):
             print('ideal specs:', self.specs_ideal)
             print('re:', reward)
             print('-'*10)
-        print(reward)
+        #print(reward)
         self.ob = np.concatenate([cur_spec_norm, self.specs_ideal_norm, self.cur_params_idx])
         self.env_steps = self.env_steps + 1
         return self.ob, reward, done, {}

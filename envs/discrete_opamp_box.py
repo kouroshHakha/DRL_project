@@ -60,7 +60,7 @@ class TwoStageAmp(gym.Env):
     CIR_YAML = framework_path[0]+"/yaml_files/two_stage_opamp.yaml"
 
     def __init__(self, multi_goal=False):
-        #print("@@@@@@213123123@@@@@@@@@@@@@@@@@")
+#        print("@@@@@@213123123@@@@@@@@@@@@@@@@@")
 
         self.env_steps = 0
         with open(TwoStageAmp.CIR_YAML, 'r') as f:
@@ -92,9 +92,7 @@ class TwoStageAmp(gym.Env):
         #observation space only used to get how many there are for RL algorithm, actual range doesnt matter
         dsn_netlist = TwoStageAmp.framework_path[0] + yaml_data['dsn_netlist']
         self.sim_env = TwoStageClass(design_netlist=dsn_netlist)
-        self.action_meaning = [-4,-1,0,1,4]
-        #print(len(self.params_id))
-        self.action_space = spaces.Tuple([spaces.Discrete(len(self.action_meaning))]*len(self.params_id))
+        self.action_space = spaces.Box(low=np.array(len(self.params_id)*[-1]), high=np.array(len(self.params_id)*[1]))
         self.observation_space = spaces.Box(
             low=np.array([TwoStageAmp.PERF_LOW]*2*len(self.specs_id)+len(self.params_id)*[1]),
             high=np.array([TwoStageAmp.PERF_HIGH]*2*len(self.specs_id)+len(self.params_id)*[1]))
@@ -146,8 +144,17 @@ class TwoStageAmp(gym.Env):
         :return:
         """
         #Take action that RL agent returns to change current params
-        self.cur_params_idx = self.cur_params_idx + np.array([self.action_meaning[a] for a in action])
+
+
+        rescaled_actions = []
+        for a in action:
+            new_action = int(round((a)*20))
+       #     if new_action > 98:
+       #         new_action = 98
+            rescaled_actions.append(new_action)
+        self.cur_params_idx = self.cur_params_idx+np.array(rescaled_actions)
         self.cur_params_idx = np.clip(self.cur_params_idx, [0]*len(self.params_id), [(len(param_vec)-1) for param_vec in self.params])
+
         #IPython.embed()
         #Get current specs and normalize
         self.cur_specs = self.update(self.cur_params_idx)
@@ -203,6 +210,7 @@ class TwoStageAmp(gym.Env):
         param_val = [OrderedDict(list(zip(self.params_id,params)))]
 
         #run param vals and simulate
+        #print(param_val)
         cur_specs = OrderedDict(sorted(self.sim_env.create_design_and_simulate(param_val, verbose=True)[0][1].items(), key=lambda k:k[0]))
         cur_specs = np.array(list(cur_specs.values()))
         return cur_specs

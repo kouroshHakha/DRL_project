@@ -11,6 +11,7 @@ import time
 import pprint
 import IPython
 debug = False
+import random
 
 class NgSpiceWrapper(object):
 
@@ -39,7 +40,7 @@ class NgSpiceWrapper(object):
 
     def create_design(self, state):
         new_fname = self.get_design_name(state)
-        design_folder = os.path.join(self.gen_dir, new_fname)
+        design_folder = os.path.join(self.gen_dir, new_fname) + str(random.randint(0,10000))
         os.makedirs(design_folder, exist_ok=True)
         state = dict(state[0])
 

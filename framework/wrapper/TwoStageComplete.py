@@ -1,20 +1,15 @@
-import re
 import numpy as np
-import copy
-from multiprocessing.dummy import Pool as ThreadPool
 import os
-import abc
 import scipy.interpolate as interp
 import scipy.optimize as sciopt
-import random
-import time
-import pprint
+import yaml
+import importlib
+import subprocess
 
 debug = False
 
-import sys
-sys.path.append('./')
 from framework.wrapper.ngspice_wrapper import NgSpiceWrapper
+
 
 class TwoStageOpenLoop(NgSpiceWrapper):
 
@@ -44,14 +39,22 @@ class TwoStageOpenLoop(NgSpiceWrapper):
 
     def parse_output(self, output_path):
 
-        ac_fname = os.path.join(output_path, 'ac.csv')
-        dc_fname = os.path.join(output_path, 'dc.csv')
+        output = str(subprocess.check_output("ngspice -v", shell=True))
+
+        if not("26" in output):
+            ac_fname = os.path.join(output_path, 'ac.csv')
+            dc_fname = os.path.join(output_path, 'dc.csv')
+            ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
+            dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=1)    
+        else: 
+            ac_fname = os.path.join(output_path, 'ac.csv.data')
+            dc_fname = os.path.join(output_path, 'dc.csv.data')
+            ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=0)
+            dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=0)
 
         if not os.path.isfile(ac_fname) or not os.path.isfile(dc_fname):
             print("ac/dc file doesn't exist: %s" % output_path)
 
-        ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
-        dc_raw_outputs = np.genfromtxt(dc_fname, skip_header=1)
         freq = ac_raw_outputs[:, 0]
         vout_real = ac_raw_outputs[:, 1]
         vout_imag = ac_raw_outputs[:, 2]
@@ -65,23 +68,32 @@ class TwoStageOpenLoop(NgSpiceWrapper):
 
     def find_ugbw(self, freq, vout):
         gain = np.abs(vout)
-        return self._get_best_crossing(freq, gain, val=1)
+        ugbw, valid = self._get_best_crossing(freq, gain, val=1)
+        if valid:
+            return ugbw
+        else:
+            return freq[0]
 
     def find_phm(self, freq, vout):
         gain = np.abs(vout)
         phase = np.angle(vout, deg=False)
         phase = np.unwrap(phase) # unwrap the discontinuity
         phase = np.rad2deg(phase) # convert to degrees
+        #
+        # plt.subplot(211)
+        # plt.plot(np.log10(freq[:200]), 20*np.log10(gain[:200]))
+        # plt.subplot(212)
+        # plt.plot(np.log10(freq[:200]), phase)
 
         phase_fun = interp.interp1d(freq, phase, kind='quadratic')
-        ugbw = self._get_best_crossing(freq, gain, val=1)
-        if phase[0] <= 0:
+        ugbw, valid = self._get_best_crossing(freq, gain, val=1)
+        if valid:
             if phase_fun(ugbw) > 0:
                 return -180+phase_fun(ugbw)
             else:
                 return 180 + phase_fun(ugbw)
         else:
-            print ('stuck in else statement')
+            return -180
 
 
     def _get_best_crossing(cls, xvec, yvec, val):
@@ -92,12 +104,12 @@ class TwoStageOpenLoop(NgSpiceWrapper):
 
         xstart, xstop = xvec[0], xvec[-1]
         try:
-            return sciopt.brentq(fzero, xstart, xstop)
+            return sciopt.brentq(fzero, xstart, xstop), True
         except ValueError:
             # avoid no solution
-            if abs(fzero(xstart)) < abs(fzero(xstop)):
-                return xstart
-            return xstop
+            # if abs(fzero(xstart)) < abs(fzero(xstop)):
+            #     return xstart
+            return xstop, False
 
 class TwoStageCommonModeGain(NgSpiceWrapper):
 
@@ -122,12 +134,18 @@ class TwoStageCommonModeGain(NgSpiceWrapper):
 
     def parse_output(self, output_path):
 
-        ac_fname = os.path.join(output_path, 'cm.csv')
+        output = str(subprocess.check_output("ngspice -v", shell=True))
+
+        if not("26" in output):
+            ac_fname = os.path.join(output_path, 'cm.csv')
+            ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
+        else: 
+            ac_fname = os.path.join(output_path, 'cm.csv.data')
+            ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=0)
 
         if not os.path.isfile(ac_fname):
             print("cm file doesn't exist: %s" % output_path)
 
-        ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
         freq = ac_raw_outputs[:, 0]
         vout_real = ac_raw_outputs[:, 1]
         vout_imag = ac_raw_outputs[:, 2]
@@ -161,12 +179,18 @@ class TwoStagePowerSupplyGain(NgSpiceWrapper):
 
     def parse_output(self, output_path):
 
-        ac_fname = os.path.join(output_path, 'ps.csv')
+        output = str(subprocess.check_output("ngspice -v", shell=True))
+
+        if not("26" in output):
+            ac_fname = os.path.join(output_path, 'ps.csv')
+            ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
+        else: 
+            ac_fname = os.path.join(output_path, 'ps.csv.data')
+            ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=0)
 
         if not os.path.isfile(ac_fname):
             print("ps file doesn't exist: %s" % output_path)
 
-        ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
         freq = ac_raw_outputs[:, 0]
         vout_real = ac_raw_outputs[:, 1]
         vout_imag = ac_raw_outputs[:, 2]
@@ -203,137 +227,24 @@ class TwoStageTransient(NgSpiceWrapper):
 
     def parse_output(self, output_path):
 
-        tran_fname = os.path.join(output_path, 'tran.csv')
+        output = str(subprocess.check_output("ngspice -v", shell=True))
+
+        if not("26" in output):
+            tran_fname = os.path.join(output_path, 'tran.csv')
+            tran_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
+        else: 
+            tran_fname = os.path.join(output_path, 'tran.csv.data')
+            tran_raw_outputs = np.genfromtxt(tran_fname, skip_header=0)
 
         if not os.path.isfile(tran_fname):
             print("tran file doesn't exist: %s" % output_path)
 
-        tran_raw_outputs = np.genfromtxt(tran_fname, skip_header=1)
         time =  tran_raw_outputs[:, 0]
         vout =  tran_raw_outputs[:, 1]
         vin =   tran_raw_outputs[:, 3]
 
         return time, vout, vin
 
-class EvaluationCore(object):
-
-    def __init__(self, cir_yaml):
-        import yaml
-        with open(cir_yaml, 'r') as f:
-            yaml_data = yaml.load(f)
-
-        # specs
-        self.specs = yaml_data['target_specs']
-        self.ugbw_min   = self.specs['ugbw_min']
-        self.gain_min   = self.specs['gain_min']
-        self.phm_min    = self.specs['phm_min']
-        self.tset_max   = self.specs['tset_max']
-        self.fdbck      = self.specs['feedback_factor']
-        self.tot_err    = self.specs['tot_err']
-        self.psrr_min   = self.specs['psrr_min']
-        self.cmrr_min   = self.specs['cmrr_min']
-        self.offset_max = self.specs['offset_sys_max']
-        self.bias_max   = self.specs['bias_max']
-
-        num_process = yaml_data['num_process']
-        ol_dsn_netlist = yaml_data['ol_dsn_netlist']
-        cm_dsn_netlist = yaml_data['cm_dsn_netlist']
-        ps_dsn_netlist = yaml_data['ps_dsn_netlist']
-        tran_dsn_netlist = yaml_data['tran_dsn_netlist']
-
-        self.ol_env = TwoStageOpenLoop(num_process=num_process, design_netlist=ol_dsn_netlist)
-        self.cm_env = TwoStageCommonModeGain(num_process=num_process, design_netlist=cm_dsn_netlist)
-        self.ps_env = TwoStagePowerSupplyGain(num_process=num_process, design_netlist=ps_dsn_netlist)
-        self.tran_env = TwoStageTransient(num_process=num_process, design_netlist=tran_dsn_netlist)
-
-        self.params = yaml_data['params']
-        self.params_vec = []
-        for value in self.params.values():
-            param_vec = np.arange(value[0], value[1], value[2])
-            self.params_vec.append(param_vec)
-        self.mp1_vec = np.arange(self.params['mp1'][0], self.params['mp1'][1], self.params['mp1'][2])
-        self.mn1_vec = np.arange(self.params['mn1'][0], self.params['mn1'][1], self.params['mn1'][2])
-        self.mn3_vec = np.arange(self.params['mn3'][0], self.params['mn3'][1], self.params['mn3'][2])
-        self.mn4_vec = np.arange(self.params['mn4'][0], self.params['mn4'][1], self.params['mn4'][2])
-        self.mp3_vec = np.arange(self.params['mp3'][0], self.params['mp3'][1], self.params['mp3'][2])
-        self.mn5_vec = np.arange(self.params['mn5'][0], self.params['mn5'][1], self.params['mn5'][2])
-        self.cc_vec = np.arange(self.params['cc'][0], self.params['cc'][1], self.params['cc'][2])
-
-
-    def cost_fun(self, design, verbose=False):
-        """
-
-        :param design: a list containing relative indices according to yaml file
-        :param verbose:
-        :return:
-        """
-
-        eval_start_time = time.time()
-        if verbose:
-            print("state_before_rounding:{}".format(design))
-
-        state_dict = dict()
-        for i, key in enumerate(self.params.keys()):
-            state_dict[key] = self.params_vec[i][design[i]]
-        state = [state_dict]
-
-        ol_results = self.ol_env.run(state, verbose=verbose)
-        cm_results = self.cm_env.run(state, verbose=verbose)
-        ps_results = self.ps_env.run(state, verbose=verbose)
-        tran_results = self.tran_env.run(state, verbose=verbose)
-
-        ugbw_cur = ol_results[0][1]['ugbw']
-        gain_cur = ol_results[0][1]['gain']
-        phm_cur = ol_results[0][1]['phm']
-        ibias_cur = ol_results[0][1]['Ibias']
-        # common mode gain and cmrr
-        cm_gain_cur = cm_results[0][1]['cm_gain']
-        cmrr_cur = 20*np.log10(gain_cur/cm_gain_cur) # in db
-        # power supply gain and psrr
-        ps_gain_cur = ps_results[0][1]['ps_gain']
-        psrr_cur = 20*np.log10(gain_cur/ps_gain_cur) # in db
-
-        # transient settling time and offset calculation
-        t = tran_results[0][1]['time']
-        vout = tran_results[0][1]['vout']
-        vin = tran_results[0][1]['vin']
-
-        tset_cur = EvaluationCore.get_tset(t, vout, vin, self.fdbck, tot_err=self.tot_err, plt=verbose)
-        offset_curr = abs(vout[0]-vin[0]/self.fdbck)
-
-        if verbose:
-            print('gain = %f vs. gain_min = %f' %(gain_cur, self.gain_min))
-            print('ugbw = %f vs. ugbw_min = %f' %(ugbw_cur, self.ugbw_min))
-            print('phm = %f vs. phm_min = %f' %(phm_cur, self.phm_min))
-            print('tset = %.2f ns vs. tset_max = %.2f ns' %(tset_cur*1e9, self.tset_max*1e9))
-            print('cmrr = %.2f db vs. cmrr_min = %.2f db' %(cmrr_cur, self.cmrr_min))
-            print('psrr = %.2f vs. psrr_min = %.2f' %(psrr_cur, self.psrr_min))
-            print('offset = %.2f mv vs. offset_max = %.2f mv' %(offset_curr*1e3, self.offset_max*1e3))
-            print('Ibias = %f' %(ibias_cur))
-
-        cost = 0
-        if ugbw_cur < self.ugbw_min:
-            cost += abs(ugbw_cur/self.ugbw_min - 1.0)
-        if gain_cur < self.gain_min:
-            cost += abs(gain_cur/self.gain_min - 1.0)
-        if phm_cur < self.phm_min:
-            cost += abs(phm_cur/self.phm_min - 1.0)
-        if tset_cur > self.tset_max:
-            cost += abs(tset_cur/self.tset_max - 1.0)
-        if cmrr_cur < self.cmrr_min:
-            cost += abs(cmrr_cur/self.cmrr_min - 1.0)
-        if psrr_cur < self.psrr_min:
-            cost += abs(psrr_cur/self.psrr_min - 1.0)
-        if offset_curr > self.offset_max:
-            cost += abs(offset_curr/self.offset_max - 1.0)
-
-        cost += abs(ibias_cur/self.bias_max)/10
-
-        eval_end_time = time.time()
-        # print("eval_time    %s sec" %(eval_end_time-eval_start_time))
-        # updated the output because we want to have access to what each individual spec is
-        # return cost
-        return cost, ugbw_cur, gain_cur, phm_cur, tset_cur, psrr_cur, cmrr_cur, offset_curr, ibias_cur
 
     @classmethod
     def get_tset(cls, t, vout, vin, fbck, tot_err=0.1, plt=False):
@@ -349,7 +260,7 @@ class EvaluationCore(object):
             plt.plot(t, y)
             plt.figure()
             plt.plot(t, vout)
-            plt.plot(t,vin)
+            plt.plot(t, vin)
 
         last_idx = np.where(y < 1.0 - tot_err)[0][-1]
         last_max_vec = np.where(y > 1.0 + tot_err)[0]
@@ -366,60 +277,111 @@ class EvaluationCore(object):
         t1 = t[last_idx + 1]
         return sciopt.brentq(f, t0, t1)
 
+class TwoStageMeasManager(object):
 
-if __name__ == '__main__':
+    def __init__(self, design_specs_fname):
+        self.design_specs_fname = design_specs_fname
+        with open(design_specs_fname, 'r') as f:
+            self.ver_specs = yaml.load(f)
 
-    # test each design manager class
-    num_process = 1
-    ol_dsn_netlist = './framework/netlist/two_stage_full/two_stage_ol.cir'
-    cm_dsn_netlist = './framework/netlist/two_stage_full/two_stage_cm.cir'
-    ps_dsn_netlist = './framework/netlist/two_stage_full/two_stage_ps.cir'
-    tran_dsn_netlist = './framework/netlist/two_stage_full/two_stage_tran.cir'
+        self.spec_range = self.ver_specs['spec_range']
+        self.params = self.ver_specs['params']
 
-    ol_env = TwoStageOpenLoop(num_process=num_process, design_netlist=ol_dsn_netlist)
-    cm_env = TwoStageCommonModeGain(num_process=num_process, design_netlist=cm_dsn_netlist)
-    ps_env = TwoStagePowerSupplyGain(num_process=num_process, design_netlist=ps_dsn_netlist)
-    tran_env = TwoStageTransient(num_process=num_process, design_netlist=tran_dsn_netlist)
+        self.params_vec = {}
+        self.search_space_size = 1
+        for key, value in self.params.items():
+            if value is not None:
+                # self.params_vec contains keys of the main parameters and the corresponding search vector for each
+                self.params_vec[key] = np.arange(value[0], value[1], value[2]).tolist()
+                self.search_space_size = self.search_space_size * len(self.params_vec[key])
 
-    # example of running it for one example point and getting back the data
-    state_list = [{'mp1': 18,
-                   'mn1': 38,
-                   'mn3': 35,
-                   'mp3': 158,
-                   'mn5': 98,
-                   'mn4': 51,
-                   'cc': 3.1e-12
-                   }]
+        self.measurement_specs = self.ver_specs['measurement']
+        root_dir = self.measurement_specs['root_dir']
+        num_process = self.measurement_specs['num_process']
 
-    ol_results = ol_env.run(state_list, verbose=True)
-    cm_results = cm_env.run(state_list, verbose=True)
-    ps_results = ps_env.run(state_list, verbose=True)
-    tran_results = tran_env.run(state_list, verbose=True)
+        self.netlist_module_dict = {}
+        for netlist_kwrd, netlist_val in self.measurement_specs['netlists'].items():
+            netlist_module = importlib.import_module(netlist_val['wrapper_module'])
+            netlist_cls = getattr(netlist_module, netlist_val['wrapper_class'])
+            self.netlist_module_dict[netlist_kwrd] = netlist_cls(num_process=num_process,
+                                                                 design_netlist=netlist_val['cir_path'],
+                                                                 root_dir=root_dir)
 
-    t = tran_results[0][1]['time']
-    vout = tran_results[0][1]['vout']
-    vin = tran_results[0][1]['vin']
-    fbck = 1
+    def evaluate(self, design):
+        state_dict = dict()
+        for i, key in enumerate(self.params_vec.keys()):
+            state_dict[key] = self.params_vec[key][design[i]]
+        state = [state_dict]
+        results = {}
+        for netlist_name, netlist_module in self.netlist_module_dict.items():
+            results[netlist_name] = netlist_module.run(state)
 
-    tset = EvaluationCore.get_tset(t, vout, vin, fbck, tot_err=0.1)
+        specs_dict = self._get_specs(results)
+        specs_dict['cost'] = self.cost_fun(specs_dict)
+        return specs_dict
 
+    def _get_specs(self, results_dict):
+        fdbck = self.measurement_specs['tb_params']['feedback_factor']
+        tot_err = self.measurement_specs['tb_params']['tot_err']
 
-    if debug:
-        print(ol_results[0][1])
-        print(cm_results[0][1])
-        print(ps_results[0][1])
-        print("tset: %.2f ns" %(tset*1e9))
+        ugbw_cur = results_dict['ol'][0][1]['ugbw']
+        gain_cur = results_dict['ol'][0][1]['gain']
+        phm_cur = results_dict['ol'][0][1]['phm']
+        ibias_cur = results_dict['ol'][0][1]['Ibias']
 
-    # test evaluation core of the opamp
-    eval_core = EvaluationCore('./framework/yaml_files/two_stage_full.yaml')
-    # cost = eval_core.cost_fun(mp1=4, #mp1=18,
-    #                           mn1=19, #mn1=38,
-    #                           mn3=7, #mn3=35,
-    #                           mp3=62, #mp3=24,
-    #                           mn5=49, #mn5=24,
-    #                           mn4=68, #mn4=51,
-    #                           cc=6,  #cc=3.1e-12,
-    #                           verbose=True)
-    # print(len(eval_core.params_vec[1]))
-    cost = eval_core.cost_fun([4,99,62,7,68,49,6], verbose=True)
-    print(cost)
+        # common mode gain and cmrr
+        cm_gain_cur = results_dict['cm'][0][1]['cm_gain']
+        cmrr_cur = 20 * np.log10(gain_cur / cm_gain_cur)  # in db
+        # power supply gain and psrr
+        ps_gain_cur = results_dict['ps'][0][1]['ps_gain']
+        psrr_cur = 20 * np.log10(gain_cur / ps_gain_cur)  # in db
+
+        # transient settling time and offset calculation
+        t = results_dict['tran'][0][1]['time']
+        vout = results_dict['tran'][0][1]['vout']
+        vin = results_dict['tran'][0][1]['vin']
+
+        tset_cur = self.netlist_module_dict['tran'].get_tset(t, vout, vin, fdbck, tot_err=tot_err)
+        offset_curr = abs(vout[0] - vin[0] / fdbck)
+
+        specs_dict = dict(
+            gain=gain_cur,
+            ugbw=ugbw_cur,
+            pm=phm_cur,
+            ibias=ibias_cur,
+            cmrr=cmrr_cur,
+            psrr=psrr_cur,
+            offset_sys=offset_curr,
+            tset=tset_cur,
+        )
+
+        return specs_dict
+
+    def compute_penalty(self, spec_nums, spec_kwrd):
+        if type(spec_nums) is not list:
+            spec_nums = [spec_nums]
+        penalties = []
+        for spec_num in spec_nums:
+            penalty = 0
+            spec_min, spec_max = self.spec_range[spec_kwrd]
+            if spec_max is not None:
+                if spec_num > spec_max:
+                    penalty += abs((spec_num - spec_max) / (spec_num + spec_max))
+            if spec_min is not None:
+                if spec_num < spec_min:
+                    penalty += abs((spec_num - spec_min) / (spec_num + spec_min))
+            penalties.append(penalty)
+        return penalties
+
+    def cost_fun(self, specs_dict):
+        """
+        :param design: a list containing relative indices according to yaml file
+        :param verbose:
+        :return:
+        """
+        cost = 0
+        for spec in self.spec_range.keys():
+            penalty = self.compute_penalty(specs_dict[spec], spec)[0]
+            cost += penalty
+
+        return cost

@@ -1,20 +1,33 @@
-ol_dsn_netlist: "./framework/netlist/two_stage_full/two_stage_ol.cir"
-cm_dsn_netlist: "./framework/netlist/two_stage_full/two_stage_cm.cir"
-ps_dsn_netlist: "./framework/netlist/two_stage_full/two_stage_ps.cir"
-tran_dsn_netlist: "./framework/netlist/two_stage_full/two_stage_tran.cir"
+ol_dsn_netlist: "netlist/two_stage_full/two_stage_ol.cir"
+cm_dsn_netlist: "netlist/two_stage_full/two_stage_cm.cir"
+ps_dsn_netlist: "netlist/two_stage_full/two_stage_ps.cir"
+tran_dsn_netlist: "netlist/two_stage_full/two_stage_tran.cir"
 num_process: 1
+
 wrapper_name: "TwoStageComplete"
 target_specs:
-  gain_min: !!float 300
-  ugbw_min: !!float 10e6
-  phm_min:  !!float 60
-  tset_max: !!float 90e-9
-  feedback_factor: !!float 1.0
-  tot_err:  !!float 0.01
-  psrr_min: 50 #db
-  cmrr_min: 50 #db
-  offset_sys_max: !!float 1e-6 #1 mv as the systematic offset
-  bias_max: !!float 10e-3
+  gain_min: !!python/tuple [150, 300]
+  ugbw_min: !!python/tuple [10000000.0, 10000000.0]
+  phm_min:  !!python/tuple [60,60]
+  tset_max: !!python/tuple [90.0e-9,90.0e-9]
+  feedback_factor: !!python/tuple [1.0,1.0]
+  tot_err:  !!python/tuple [0.01, 0.01]
+  psrr_min: !!python/tuple [50,50] #db
+  cmrr_min: !!python/tuple [50,50] #db
+  offset_sys_max: !!python/tuple [1.0e-6,1.0e-3] #1 mv as the systematic offset
+  bias_max: !!python/tuple [10.0e-3,0.2e-3]
+
+target_valid_specs:
+  gain_min: !!python/tuple [200,400] 
+  ugbw_min: !!python/tuple [1000000.0,10000000.0]
+  phm_min: !!python/tuple [60,61] 
+  tset_max: !!python/tuple [50.0e-7, 100.0e-9]
+  feedback_factor: !!python/tuple [1.0,1.0001]
+  tot_err:  !!python/tuple [0.01,0.03]
+  psrr_min: !!python/tuple [30,60] #db
+  cmrr_min: !!python/tuple [30,60] #db
+  offset_sys_max: !!python/tuple [1.0e-5,1.0e-3] #1 mv as the systematic offset
+  bias_max: !!python/tuple [10.0e-3,10.0e-2]
 
 params:
   mp1:  !!python/tuple [1, 100, 1]

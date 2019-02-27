@@ -180,7 +180,63 @@ class TwoStageAmp(gym.Env):
         #print("-----")
         return norm_spec
 
+    def mit_lookup(self, spec, goal_spec):
+        goal_spec = [float(e) for e in goal_spec]
+        norm_spec = spec / goal_spec
+        return norm_spec
+        
+    def mit_reward(self, spec, goal_spec):
+        '''
+        Reward: doesn't penalize for overshooting spec, is negative
+        '''
+        rel_specs = self.mit_lookup(spec, goal_spec)
+        hard_rewards = []
+        opt_rewards = []
+        alpha = 1 / 20 
+        e_0 = 0
+        e_1 = len(rel_specs)
+        norm = len(rel_specs) +1
+    
+        for i,rel_spec in enumerate(rel_specs):
+          if(self.specs_id[i] == 'ibias_max'):
+            rel_spec = 1 / rel_spec
+            rel_spec = rel_spec * alpha
+            opt_rewards.append(rel_spec)
+          else:
+            hard_rewards.append(rel_spec)
+          
+        reward = np.sum(hard_rewards)
+        opt_reward = np.sum(opt_rewards)
+        ret = 0
+        if reward > len(hard_rewards):
+          ret = opt_reward - norm + e_1  
+        else:
+          ret = reward + alpha * opt_rewards - norm + e_0 
+
+        #print(norm)
+        #print(reward)
+        #print(ret)
+        return ret 
+
     def reward(self, spec, goal_spec):
+        '''
+        Reward: doesn't penalize for overshooting spec, is negative
+        '''
+  
+        rel_specs = self.lookup(spec, goal_spec)
+        rewards = []
+        for i,rel_spec in enumerate(rel_specs):
+            if(self.specs_id[i] == 'ibias_max'):
+                rel_spec = rel_spec*-1.0
+            if rel_spec < 0:
+                rewards.append(-rel_spec)
+            else:
+                rewards.append(0)
+
+        reward = -np.linalg.norm(rewards) 
+        return reward if reward < -0.05 else 10+np.sum(rel_specs)
+
+    def orig_reward(self, spec, goal_spec):
         '''
         Reward: doesn't penalize for overshooting spec, is negative
         '''

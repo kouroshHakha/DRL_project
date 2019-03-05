@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import pickle
+import IPython
 
 import gym
 import ray
@@ -15,6 +16,8 @@ from ray.rllib.agents.registry import get_agent_class
 from ray.tune.registry import register_env
 
 from envs.discrete_opamp import TwoStageAmp
+from envs.opamp_full_discrete import TwoStageAmp as TwoStageFull
+
 EXAMPLE_USAGE = """
 Example Usage via RLlib CLI:
     rllib rollout /tmp/ray/checkpoint_dir/checkpoint-0 --run DQN
@@ -37,7 +40,6 @@ def create_parser(parser_creator=None):
         description="Roll out a reinforcement learning agent "
         "given a checkpoint.",
         epilog=EXAMPLE_USAGE)
-
     parser.add_argument(
         "checkpoint", type=str, help="Checkpoint from which to roll out.")
     required_named = parser.add_argument_group("required named arguments")
@@ -66,6 +68,16 @@ def create_parser(parser_creator=None):
         type=json.loads,
         help="Algorithm-specific configuration (e.g. env, hyperparams). "
         "Surpresses loading of configuration from checkpoint.")
+    parser.add_argument(
+        "--num_val_specs",
+        type=int,
+        default=50,
+        help="Number of untrained objectives to test on")
+    parser.add_argument(
+        "--traj_len",
+        type=int,
+        default=50,
+        help="Length of each trajectory")
     return parser
 
 
@@ -102,7 +114,11 @@ def run(args, parser):
 
 def rollout(agent, env_name, num_steps, out=None, no_render=True):
     if hasattr(agent, "local_evaluator"):
-        env = agent.local_evaluator.env
+        #env = agent.local_evaluator.env
+        if env_name == "opamp-v0":
+            env = TwoStageAmp(generalize=True, num_valid=args.num_val_specs)
+        elif env_name == "opamp_full":
+            env = TwoStageFull(generalize=True, num_valid=args.num_val_specs)
     else:
         env = gym.make(env_name)
 
@@ -118,14 +134,17 @@ def rollout(agent, env_name, num_steps, out=None, no_render=True):
 
     if out is not None:
         rollouts = []
-    steps = 0
-    while steps < (num_steps or steps + 1):
+        next_states = []
+        next_state_tot = []
+    rollout_steps = 0
+    while rollout_steps < args.num_val_specs:
         if out is not None:
-            rollout = []
+            rollout_num = []
         state = env.reset()
         done = False
         reward_total = 0.0
-        while not done and steps < (num_steps or steps + 1):
+        steps=0
+        while not done and steps < args.traj_len:
             if use_lstm:
                 action, state_init, logits = agent.compute_action(
                     state, state=state_init)
@@ -136,15 +155,18 @@ def rollout(agent, env_name, num_steps, out=None, no_render=True):
             if not no_render:
                 env.render()
             if out is not None:
-                rollout.append([state, action, next_state, reward, done])
+                rollout_num.append(reward)
+                next_states.append(next_state)
             steps += 1
             state = next_state
         if out is not None:
-            rollouts.append(rollout)
+            rollouts.append(rollout_num)
+            next_state_tot.append(next_states)
         print("Episode reward", reward_total)
+        rollout_steps+=1
     if out is not None:
-        pickle.dump(rollouts, open(out, "wb"))
-
+        pickle.dump(rollouts, open(str(out)+'reward', "wb"))
+        pickle.dump(next_state_tot, open(str(out)+'ns',"wb"))
 
 if __name__ == "__main__":
     parser = create_parser()

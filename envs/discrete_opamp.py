@@ -59,7 +59,7 @@ class TwoStageAmp(gym.Env):
     framework_path = os.path.abspath(framework.__file__).split("__")
     CIR_YAML = framework_path[0]+"/yaml_files/two_stage_opamp.yaml"
 
-    def __init__(self, multi_goal=False):
+    def __init__(self, multi_goal=False, generalize=True, num_valid = 50, rinokeras_specs=True):
         #print("@@@@@@213123123@@@@@@@@@@@@@@@@@")
 
         self.env_steps = 0
@@ -67,10 +67,46 @@ class TwoStageAmp(gym.Env):
             yaml_data = yaml.load(f, OrderedDictYAMLLoader)
 
         self.multi_goal = False #multi_goal
+        self.rinokeras_specs = True
         #print(multi_goal)
         #IPython.embed()
         # design specs
-        specs = yaml_data['target_specs']
+        if generalize == False:
+            specs = yaml_data['target_specs']
+        else:
+            specs_range = yaml_data['target_valid_specs']
+            specs_range_vals = list(specs_range.values())
+
+            if self.rinokeras_specs:
+                specs = yaml_data['target_specs']
+                specs = OrderedDict(sorted(specs.items(), key=lambda k: k[0]))
+                arr = np.load(TwoStageAmp.framework_path[0]+"../ploting_sand_box/rinokeras_specs.npy")
+                i = 0
+                for key,value in specs.items():
+                    specs[key] = arr[:,i]
+                    i+=1
+            else:
+                specs_valid = []
+                for spec in specs_range_vals:
+                    if isinstance(spec[0],int):
+                        list_val = [random.randint(int(spec[0]),int(spec[1])) for x in range(0,num_valid)]
+                    else:
+                        list_val = [random.uniform(spec[0],spec[1]) for x in range(0,num_valid)]
+                    specs_valid.append(tuple(list_val))
+                i=0
+                for key,value in specs_range.items():
+                    specs_range[key] = specs_valid[i]
+                    i+=1
+                specs_train = yaml_data['target_specs']
+                specs_val = []
+                for i,valid_arr in enumerate(list(specs_range.values())):
+                    specs_val.append(valid_arr+list(specs_train.values())[i])
+                specs = specs_train
+                i = 0
+                for key,value in specs.items():
+                    specs[key] = specs_val[i]
+                    i+=1
+
         self.specs = OrderedDict(sorted(specs.items(), key=lambda k: k[0]))
         self.specs_ideal = []
         self.specs_id = list(self.specs.keys())
@@ -92,8 +128,9 @@ class TwoStageAmp(gym.Env):
         #observation space only used to get how many there are for RL algorithm, actual range doesnt matter
         dsn_netlist = TwoStageAmp.framework_path[0] + yaml_data['dsn_netlist']
         self.sim_env = TwoStageClass(design_netlist=dsn_netlist)
-        self.action_meaning = [-4,-1,0,1,4]
+        #self.action_meaning = [-4,-1,0,1,4]
         #print(len(self.params_id))
+        self.action_meaning = [-1,0,2]
         self.action_space = spaces.Tuple([spaces.Discrete(len(self.action_meaning))]*len(self.params_id))
         self.observation_space = spaces.Box(
             low=np.array([TwoStageAmp.PERF_LOW]*2*len(self.specs_id)+len(self.params_id)*[1]),
@@ -127,7 +164,7 @@ class TwoStageAmp(gym.Env):
         self.specs_ideal_norm = self.lookup(self.specs_ideal, self.global_g)
 
         #initialize current parameters
-        self.cur_params_idx = np.array([50, 50, 50, 50, 50, 50, 50])
+        self.cur_params_idx = np.array([20, 20, 20, 20, 20, 20, 1])
         self.cur_specs = self.update(self.cur_params_idx)
         cur_spec_norm = self.lookup(self.cur_specs, self.global_g)
         reward = self.reward(self.cur_specs, self.specs_ideal)
@@ -184,7 +221,7 @@ class TwoStageAmp(gym.Env):
         goal_spec = [float(e) for e in goal_spec]
         norm_spec = spec / goal_spec
         return norm_spec
-        
+
     def mit_reward(self, spec, goal_spec):
         '''
         Reward: doesn't penalize for overshooting spec, is negative
@@ -192,11 +229,11 @@ class TwoStageAmp(gym.Env):
         rel_specs = self.mit_lookup(spec, goal_spec)
         hard_rewards = []
         opt_rewards = []
-        alpha = 1 / 20 
+        alpha = 1 / 20
         e_0 = 0
         e_1 = len(rel_specs)
         norm = len(rel_specs) +1
-    
+
         for i,rel_spec in enumerate(rel_specs):
           if(self.specs_id[i] == 'ibias_max'):
             rel_spec = 1 / rel_spec
@@ -204,25 +241,25 @@ class TwoStageAmp(gym.Env):
             opt_rewards.append(rel_spec)
           else:
             hard_rewards.append(rel_spec)
-          
+
         reward = np.sum(hard_rewards)
         opt_reward = np.sum(opt_rewards)
         ret = 0
         if reward > len(hard_rewards):
-          ret = opt_reward - norm + e_1  
+          ret = opt_reward - norm + e_1
         else:
-          ret = reward + alpha * opt_rewards - norm + e_0 
+          ret = reward + alpha * opt_rewards - norm + e_0
 
         #print(norm)
         #print(reward)
         #print(ret)
-        return ret 
+        return ret
 
-    def reward(self, spec, goal_spec):
+    def jenny_reward(self, spec, goal_spec):
         '''
         Reward: doesn't penalize for overshooting spec, is negative
         '''
-  
+
         rel_specs = self.lookup(spec, goal_spec)
         rewards = []
         for i,rel_spec in enumerate(rel_specs):
@@ -233,10 +270,10 @@ class TwoStageAmp(gym.Env):
             else:
                 rewards.append(0)
 
-        reward = -np.linalg.norm(rewards) 
+        reward = -np.linalg.norm(rewards)
         return reward if reward < -0.05 else 10+np.sum(rel_specs)
 
-    def orig_reward(self, spec, goal_spec):
+    def reward(self, spec, goal_spec):
         '''
         Reward: doesn't penalize for overshooting spec, is negative
         '''

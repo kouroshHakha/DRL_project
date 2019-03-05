@@ -67,17 +67,15 @@ class TwoStageAmp(gym.Env):
             yaml_data = yaml.load(f, OrderedDictYAMLLoader)
 
         self.multi_goal = False #multi_goal
-        self.rinokeras_specs = True
-        #print(multi_goal)
-        #IPython.embed()
+        self.generalize = generalize
+
         # design specs
         if generalize == False:
             specs = yaml_data['target_specs']
         else:
             specs_range = yaml_data['target_valid_specs']
             specs_range_vals = list(specs_range.values())
-
-            if self.rinokeras_specs:
+            if rinokeras_specs:
                 specs = yaml_data['target_specs']
                 specs = OrderedDict(sorted(specs.items(), key=lambda k: k[0]))
                 arr = np.load(TwoStageAmp.framework_path[0]+"../ploting_sand_box/rinokeras_specs.npy")
@@ -146,19 +144,29 @@ class TwoStageAmp(gym.Env):
                 self.global_g.append(float(spec[self.fixed_goal_idx]))
         self.global_g = np.array(self.global_g)
 
-        #Initializing action space, works by creating all combos for each parameter
+        #objective number (used for validation)
+        self.obj_idx = 0
 
-    def reset(self, z=None, sigma=0.2):
-        #print("@@@@@@@@@@@@@@@@@@@@@@@")
+    def reset(self):
         #if multi-goal is selected, every time reset occurs, it will select a different design spec as objective
-        if self.multi_goal == False:
-            self.specs_ideal = self.global_g
-        else:
-            rand_oidx = random.randint(0,self.num_os-1)
+        if self.generalize == True:
+            if self.obj_idx > self.num_os-1:
+                self.obj_idx = 0
+            idx = self.obj_idx
+            self.obj_idx += 1
             self.specs_ideal = []
             for spec in list(self.specs.values()):
-                self.specs_ideal.append(spec[rand_oidx])
+                self.specs_ideal.append(spec[idx])
             self.specs_ideal = np.array(self.specs_ideal)
+        else:
+            if self.multi_goal == False:
+                self.specs_ideal = self.global_g
+            else:
+                idx = random.randint(0,self.num_os-1)
+                self.specs_ideal = []
+                for spec in list(self.specs.values()):
+                    self.specs_ideal.append(spec[idx])
+                self.specs_ideal = np.array(self.specs_ideal)
 
         #applicable only when you have multiple goals, normalizes everything to some global_g
         self.specs_ideal_norm = self.lookup(self.specs_ideal, self.global_g)
@@ -183,17 +191,16 @@ class TwoStageAmp(gym.Env):
         :return:
         """
         #Take action that RL agent returns to change current params
+        action = list(np.reshape(np.array(action),(np.array(action).shape[0],)))
         self.cur_params_idx = self.cur_params_idx + np.array([self.action_meaning[a] for a in action])
         self.cur_params_idx = np.clip(self.cur_params_idx, [0]*len(self.params_id), [(len(param_vec)-1) for param_vec in self.params])
-        #IPython.embed()
+
         #Get current specs and normalize
         self.cur_specs = self.update(self.cur_params_idx)
         cur_spec_norm  = self.lookup(self.cur_specs, self.global_g)
         reward = self.reward(self.cur_specs, self.specs_ideal)
         done = False
-        #print(reward)
-        #print(self.global_g)
-        #print(self.cur_specs)
+
         #incentivize reaching goal state
         if (reward >= 10):
             done = True
@@ -203,7 +210,7 @@ class TwoStageAmp(gym.Env):
             print('ideal specs:', self.specs_ideal)
             print('re:', reward)
             print('-'*10)
-        #print(reward)
+
         self.ob = np.concatenate([cur_spec_norm, self.specs_ideal_norm, self.cur_params_idx])
         self.env_steps = self.env_steps + 1
         return self.ob, reward, done, {}
@@ -211,10 +218,6 @@ class TwoStageAmp(gym.Env):
     def lookup(self, spec, goal_spec):
         goal_spec = [float(e) for e in goal_spec]
         norm_spec = (spec-goal_spec)/goal_spec
-        #print("lookup function here --")
-        #print(spec)
-        #print(goal_spec)
-        #print("-----")
         return norm_spec
 
     def mit_lookup(self, spec, goal_spec):
@@ -250,9 +253,6 @@ class TwoStageAmp(gym.Env):
         else:
           ret = reward + alpha * opt_rewards - norm + e_0
 
-        #print(norm)
-        #print(reward)
-        #print(ret)
         return ret
 
     def jenny_reward(self, spec, goal_spec):

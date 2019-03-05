@@ -59,8 +59,12 @@ class TwoStageAmp(gym.Env):
     framework_path = os.path.abspath(framework.__file__).split("__")
     CIR_YAML = framework_path[0]+"/yaml_files/two_stage_opamp.yaml"
 
-    def __init__(self, multi_goal=False, generalize=True, num_valid = 50, rinokeras_specs=True):
+    def __init__(self, env_config):
         #print("@@@@@@213123123@@@@@@@@@@@@@@@@@")
+        multi_goal = env_config.get("multi_goal",False)
+        generalize = env_config.get("generalize",False)
+        num_valid = env_config.get("num_valid",50)
+        rinokeras_specs = env_config.get("rinokeras_specs",True)
 
         self.env_steps = 0
         with open(TwoStageAmp.CIR_YAML, 'r') as f:

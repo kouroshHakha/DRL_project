@@ -22,7 +22,7 @@ tune.run_experiments({
             "num_gpus": 0,
             "model":{"fcnet_hiddens": [64, 64]},
             "num_workers": 6,
-            "env_config":{},
+            "env_config":{"generalize":False},
             },
     },
 })

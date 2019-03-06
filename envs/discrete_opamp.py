@@ -62,7 +62,7 @@ class TwoStageAmp(gym.Env):
     def __init__(self, env_config):
         #print("@@@@@@213123123@@@@@@@@@@@@@@@@@")
         multi_goal = env_config.get("multi_goal",False)
-        generalize = env_config.get("generalize",False)
+        generalize = env_config.get("generalize",True)
         num_valid = env_config.get("num_valid",50)
         rinokeras_specs = env_config.get("rinokeras_specs",True)
 
@@ -133,7 +133,8 @@ class TwoStageAmp(gym.Env):
         #self.action_meaning = [-4,-1,0,1,4]
         #print(len(self.params_id))
         self.action_meaning = [-1,0,2]
-        self.action_space = spaces.Tuple([spaces.Discrete(len(self.action_meaning))]*len(self.params_id))
+        #self.action_space = spaces.Tuple([spaces.Discrete(len(self.action_meaning))]*len(self.params_id))
+        self.action_space = spaces.Discrete(len(self.action_meaning)**len(self.params_id))
         self.observation_space = spaces.Box(
             low=np.array([TwoStageAmp.PERF_LOW]*2*len(self.specs_id)+len(self.params_id)*[1]),
             high=np.array([TwoStageAmp.PERF_HIGH]*2*len(self.specs_id)+len(self.params_id)*[1]))
@@ -147,6 +148,11 @@ class TwoStageAmp(gym.Env):
         for spec in list(self.specs.values()):
                 self.global_g.append(float(spec[self.fixed_goal_idx]))
         self.global_g = np.array(self.global_g)
+
+
+        #Initializing action space, works by creating all combos for each parameter
+        self.action_arr = list(itertools.product(*([self.action_meaning for i in range(len(self.params_id))])))
+
 
         #objective number (used for validation)
         self.obj_idx = 0
@@ -195,8 +201,10 @@ class TwoStageAmp(gym.Env):
         :return:
         """
         #Take action that RL agent returns to change current params
-        action = list(np.reshape(np.array(action),(np.array(action).shape[0],)))
-        self.cur_params_idx = self.cur_params_idx + np.array([self.action_meaning[a] for a in action])
+        #action = list(np.reshape(np.array(action),(np.array(action).shape[0],)))
+        #self.cur_params_idx = self.cur_params_idx + np.array([self.action_meaning[a] for a in action])
+
+        self.cur_params_idx = self.cur_params_idx + np.array(self.action_arr[int(action)])
         self.cur_params_idx = np.clip(self.cur_params_idx, [0]*len(self.params_id), [(len(param_vec)-1) for param_vec in self.params])
 
         #Get current specs and normalize

@@ -115,8 +115,9 @@ def run(args, parser):
 def rollout(agent, env_name, num_steps, out=None, no_render=True):
     if hasattr(agent, "local_evaluator"):
         #env = agent.local_evaluator.env
+        env_config = {"generalize":True,"num_valid":args.num_val_specs}
         if env_name == "opamp-v0":
-            env = TwoStageAmp(generalize=True, num_valid=args.num_val_specs)
+            env = TwoStageAmp(env_config)
         elif env_name == "opamp_full":
             env = TwoStageFull(generalize=True, num_valid=args.num_val_specs)
     else:

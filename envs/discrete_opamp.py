@@ -133,8 +133,8 @@ class TwoStageAmp(gym.Env):
         #self.action_meaning = [-4,-1,0,1,4]
         #print(len(self.params_id))
         self.action_meaning = [-1,0,2]
-        #self.action_space = spaces.Tuple([spaces.Discrete(len(self.action_meaning))]*len(self.params_id))
-        self.action_space = spaces.Discrete(len(self.action_meaning)**len(self.params_id))
+        self.action_space = spaces.Tuple([spaces.Discrete(len(self.action_meaning))]*len(self.params_id))
+        #self.action_space = spaces.Discrete(len(self.action_meaning)**len(self.params_id))
         self.observation_space = spaces.Box(
             low=np.array([TwoStageAmp.PERF_LOW]*2*len(self.specs_id)+len(self.params_id)*[1]),
             high=np.array([TwoStageAmp.PERF_HIGH]*2*len(self.specs_id)+len(self.params_id)*[1]))
@@ -182,7 +182,7 @@ class TwoStageAmp(gym.Env):
         self.specs_ideal_norm = self.lookup(self.specs_ideal, self.global_g)
 
         #initialize current parameters
-        self.cur_params_idx = np.array([20, 20, 20, 20, 20, 20, 1])
+        self.cur_params_idx = np.array([33, 33, 33, 33, 33, 33, 33])
         self.cur_specs = self.update(self.cur_params_idx)
         cur_spec_norm = self.lookup(self.cur_specs, self.global_g)
         reward = self.reward(self.cur_specs, self.specs_ideal)
@@ -196,15 +196,15 @@ class TwoStageAmp(gym.Env):
 
     def step(self, action):
         """
-
         :param action: is vector with elements between 0 and 1 mapped to the index of the corresponding parameter
         :return:
         """
-        #Take action that RL agent returns to change current params
-        #action = list(np.reshape(np.array(action),(np.array(action).shape[0],)))
-        #self.cur_params_idx = self.cur_params_idx + np.array([self.action_meaning[a] for a in action])
 
-        self.cur_params_idx = self.cur_params_idx + np.array(self.action_arr[int(action)])
+        #Take action that RL agent returns to change current params
+        action = list(np.reshape(np.array(action),(np.array(action).shape[0],)))
+        self.cur_params_idx = self.cur_params_idx + np.array([self.action_meaning[a] for a in action])
+
+#        self.cur_params_idx = self.cur_params_idx + np.array(self.action_arr[int(action)])
         self.cur_params_idx = np.clip(self.cur_params_idx, [0]*len(self.params_id), [(len(param_vec)-1) for param_vec in self.params])
 
         #Get current specs and normalize

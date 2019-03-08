@@ -122,7 +122,7 @@ class TwoStageAmp(gym.Env):
         self.ps_env = TwoStagePowerSupplyGain(design_netlist=ps_dsn_netlist)
         self.tran_env = TwoStageTransient(design_netlist=tran_dsn_netlist)
         
-        self.action_meaning = [-1,0,2]
+        self.action_meaning = [-1,0,4]
         self.action_space = spaces.Discrete(len(self.action_meaning)**len(self.params_id))
         self.observation_space = spaces.Box(
             low=np.array([TwoStageAmp.PERF_LOW]*2*len(self.specs_id)+len(self.params_id)*[1]),
@@ -226,7 +226,7 @@ class TwoStageAmp(gym.Env):
                 rel_spec = rel_spec/10
             if rel_spec < 0:
                 reward += rel_spec
-        return reward if reward < -0.05 else 10+np.sum(rel_specs)
+        return reward if reward < -0.01 else 10+np.sum(rel_specs)
 
     def update(self, params_idx):
         """

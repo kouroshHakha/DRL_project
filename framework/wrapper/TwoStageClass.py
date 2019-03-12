@@ -90,7 +90,8 @@ class TwoStageClass(NgSpiceWrapper):
             else:
                 return 180 + phase_fun(ugbw)
         else:
-            print ('stuck in else statement')
+            pass
+            #print ('stuck in else statement')
         return 0
 
     def _get_best_crossing(cls, xvec, yvec, val):

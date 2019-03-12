@@ -11,6 +11,7 @@ from tensorflow.keras.layers import Dense, Input
 
 from envs.opamp_discrete import TwoStageAmp
 from envs.opamp_full_discrete import TwoStageAmp as TwoStageAmpFull
+from envs.bag_opamp_discrete import TwoStageAmp as TwoStageAmpBag
 
 from rinokeras.rl.env_runners import PGEnvironmentRunner, BatchRollout
 from rinokeras.rl.policies import StandardPolicy, LSTMPolicy
@@ -35,14 +36,13 @@ parser.add_argument('--logstd', type=float, default=0, help='initial_logstd') #h
 parser.add_argument('--seed', '-s', type=int, default=10) #determines what random seed you run on
 parser.add_argument('--mobj', action='store_true', help='multiple objectives')
 parser.add_argument('--mobj_gen', action='store_true', help='whether to run difference mobj during validation')
-
 args = parser.parse_args()
 
 # setup the log folder
 if not(os.path.exists('data')):
     os.makedirs('data')
-logdir = args.expname + 'rinokeras' + '_' + args.env + '_' + args.policy + '_' + args.alg + '_' + str(args.mobj) 
-logdir = os.path.join('data', logdir + '/0')
+logdir_base = args.expname + '_rinokeras' + '_' + args.env + '_' + args.policy + '_' + args.alg + '_' + str(args.mobj) 
+logdir = os.path.join('data', logdir_base + '/0')
 if not(os.path.exists(logdir)):
     os.makedirs(logdir)
 
@@ -57,6 +57,9 @@ if args.env == 'opamp':
 elif args.env == 'opamp_full':
     env = TwoStageAmpFull(multi_goal=args.mobj)
     env_validation = TwoStageAmpFull()
+elif args.env == 'opamp_bag':
+    env = TwoStageAmpBag(multi_goal=args.mobj,generalize=False)
+    env_validation = TwoStageAmpBag(generalize=True)
 
 # initialize random seed
 np.random.seed(args.seed)
@@ -74,7 +77,7 @@ discrete = not isinstance(env.action_space, gym.spaces.Box)
 action_shape = (env.action_space.n,) if discrete else env.action_space.shape
 model_dim = 64                                      #Num neurons for each layer
 gamma = 0.95                                        #discount factor, dampen agent's choice of action
-n_rollouts_per_batch_validation = 4                 #Number of rollouts used for validation 
+n_rollouts_per_batch_validation = 52                #Number of rollouts used for validation 
 n_rollouts_per_batch_training = 20                  #Number of rollouts used for training
 max_ep_steps= 60                                    #Maximum number of steps in each trajectory 
 n_updates_per_batch = 1 if args.alg == 'vpg' else 3 #Efficient updates if you use PPO
@@ -99,6 +102,10 @@ sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
 experiment = algorithms[args.alg](policy, distribution_strategy=tf.contrib.distribute.OneDeviceStrategy('/cpu:0'),
                                   entcoeff=1)
 graph = TrainGraph.from_experiment(experiment, (obs_ph, act_ph, val_ph, seqlen_ph))
+
+#Set directory to save trained model
+saving_dir = "/home/"+os.environ['USER']+"/DRL_project/save_model"
+os.makedirs(saving_dir,exist_ok=True)
 
 #Initialize runners of the environment, Roshan's code stuff
 runner = PGEnvironmentRunner(env, policy, gamma, max_episode_steps=max_ep_steps)
@@ -180,7 +187,8 @@ for t in itertools.count():
     if args.alg == 'ppo':
         experiment.update_old_model()
     for _ in range(n_updates_per_batch):
-        loss = graph.run('update', (batch_rollout.obs, batch_rollout.act, batch_rollout.val, batch_rollout.seqlens))
+        file_name = saving_dir+"/"+logdir_base+"_iterations_"+str(t+1)+".h5"
+        loss = graph.run('update',file_name,(batch_rollout.obs, batch_rollout.act, batch_rollout.val, batch_rollout.seqlens))
 
     #stopping criteria
     if (mean_episode_reward > -0.05) or (t > 1000):

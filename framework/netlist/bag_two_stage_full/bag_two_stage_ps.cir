@@ -1,0 +1,99 @@
+bag_two_stage_amp test
+
+* Negative GM Two stage OTA
+.include "/home/suhong/DRL_project/framework/netlist/spice_models/45nm_bulk.txt"
+
+* Independent voltage/current source
+* VXXXX/IYYYYY N+ N- DC/TRAN VALUE AC MAG PHASE
+* VCVS: Exxxx N+ N- NC+ NC- VALUE 
+* N+ positive node
+* N- negative node
+* NC+ positive controlling node
+* NC- positive controlling node
+* ex) ein1 inp cm in 0 0.5 -> inp = cm + (in-0)*0.5
+* ex) ein2 inn cm in 0 -0.5 -> inn = cm + (in-0)*-0.5
+* MOSFET_NAME D G S B MOSFET_TYPE w=W l=L m=M
+* mpfet d g s x pfet L=1 NFIN=nfin
+
+.param wp1=0.5u lp1=45n mp1=10
+.param wp2=0.5u lp2=45n mp2=10
+.param wp3=0.5u lp3=45n mp3=10
+.param wn1=0.5u ln1=45n mn1=10
+.param wn2=0.5u ln2=45n mn2=10
+.param wn3=0.5u ln3=45n mn3=10
+.param wn4=0.5u ln4=45n mn4=10
+.param cfb=67.2e-15
+.param rfb=3.1307e3
+
+.param gain_cmfb=200
+.param vdd=1.0
+.param cload=22e-15
+.param ibias=200e-6
+.param voutcm=0.5
+.param vincm=0.5
+.param cmfb_resistor = 100e3
+
+*** common mode feedback ***
+.subckt CMFB_AMP n p ac dc
+r1 p dc cmfb_resistor
+r2 dc n cmfb_resistor
+e1 ac 0 p n 1
+.ends CMFB_AMP
+
+*** Negative-GM Two Stage OTA ***
+.subckt NegativeGM_OPAMP midn midp outn outp vdd vss bias cmbais inn inp ref
+mpcml outp cmbias vdd vdd pmos w=wp1 l=lp1 m=mp1
+mptail2l outp bias vdd vdd pmos w=wp1 l=lp1 m=mp1
+mpcmr outn cmbias vdd vdd pmos w=wp1 l=lp1 m=mp1
+mptail2r outn bias vdd vdd pmos w=wp1 l=lp1 m=mp1
+mptail tail bias vdd vdd pmos w=wp1 l=lp1 m=mp1
+mndio2l outp midn vss vss nmos w=wn3 l=ln3 m=mn3
+mndio2r outn midp vss vss nmos w=wn3 l=ln3 m=mn3
+mnngm2l outp midn vss vss nmos w=wn4 l=ln4 m=mn4
+mnngm2r outn midp vss vss nmos w=wn4 l=ln4 m=mn4
+mndior midp midp vss vss nmos w=wn1 l=ln1 m=mn1
+mndiol midn midn vss vss nmos w=wn1 l=ln1 m=mn1
+mnngml midn midp vss vss nmos w=wn2 l=ln2 m=mn2
+mnngmr midp midn vss vss nmos w=wn2 l=ln2 m=mn2
+mpres bias ref tail_ref vdd pmos w=wp2 l=lp2 m=mp2
+mpref tail_ref bias vdd vdd pmos w=wp2 l=lp2 m=mp2
+mpinr midp inn tail vdd pmos w=wp3 l=lp3 m=mp3
+mpinl midn inp tail vdd pmos w=wp3 l=lp3 m=mp3
+cfbp outp xp cfb
+cfbn outn xn cfb
+rfbp midn xp rfb
+rfbn midp xn rfb		
+.ends NegativeGM_OPAMP
+
+*** Wrapping OTA ***
+.subckt OPAMP_wrapper midac middc outac outdc vdd vss ibias inac indc voutcm
+xcmfb_out outn outp outac outdc CMFB_AMP
+xcmfb_mid midn midp midac middc CMFB_AMP
+ecmfb cmbias vss outdc voutcm gain_cmfb 
+coutn outn vss cload
+coutp outp vss cload
+einp inp indc inac vss 0.5 
+einn inn indc inac vss -0.5
+xdut midn midp outn outp vdd vss ibias cmbias inn inp indc NegativeGM_OPAMP
+.ends OPAMP_wrapper
+
+*** Test bench2 ***
+ibias ibias vss DC=ibias
+vsup vdd vss DC=vdd AC=1
+voutcm outcm vss DC=voutcm
+vincm incm vss DC=vincm
+vgnd vss 0 DC=0
+vinac vin vss DC=0 AC=0
+xdut midac middc vout outdc vdd vss ibias vin incm outcm OPAMP_wrapper
+
+.ac dec 10 1 1G
+.control
+run
+set units=degrees
+set wr_vecnames
+option numdgt=7
+wrdata ps.csv v(vout) 
+.endc
+
+
+.end

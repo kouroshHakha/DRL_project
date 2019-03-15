@@ -67,6 +67,7 @@ class TwoStageAmp(gym.Env):
         num_valid = env_config.get("num_valid",50)
         rinokeras_specs = env_config.get("rinokeras_specs",False)
         specs_save = env_config.get("save_specs", False)
+        valid = env_config.get("run_valid", False)
 
         self.env_steps = 0
         with open(TwoStageAmp.CIR_YAML, 'r') as f:
@@ -75,6 +76,7 @@ class TwoStageAmp(gym.Env):
         self.multi_goal = False #multi_goal
         self.generalize = generalize
         self.save_specs = specs_save
+        self.valid = valid
 
         # design specs
         if generalize == False:
@@ -167,11 +169,13 @@ class TwoStageAmp(gym.Env):
     def reset(self):
         #if multi-goal is selected, every time reset occurs, it will select a different design spec as objective
         if self.generalize == True:
-            if self.obj_idx > self.num_os-1:
-                self.obj_idx = 0
-            idx = self.obj_idx
-            self.obj_idx += 1
-            #idx = random.randint(0,self.num_os-1)
+            if self.valid = True:
+                if self.obj_idx > self.num_os-1:
+                    self.obj_idx = 0
+                idx = self.obj_idx
+                self.obj_idx += 1
+            else:
+                idx = random.randint(0,self.num_os-1)
             self.specs_ideal = []
             for spec in list(self.specs.values()):
                 self.specs_ideal.append(spec[idx])

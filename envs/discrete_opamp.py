@@ -92,6 +92,7 @@ class TwoStageAmp(gym.Env):
                     i+=1
             else:
                 specs_valid = []
+                #random.seed(2992)
                 for spec in specs_range_vals:
                     if isinstance(spec[0],int):
                         list_val = [random.randint(int(spec[0]),int(spec[1])) for x in range(0,num_valid)]

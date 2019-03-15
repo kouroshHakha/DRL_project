@@ -9,6 +9,7 @@ import json
 import os
 import pickle
 import IPython
+import numpy as np
 
 import gym
 import ray
@@ -111,18 +112,25 @@ def run(args, parser):
     num_steps = int(args.steps)
     rollout(agent, args.env, num_steps, args.out, args.no_render)
 
+def unlookup(norm_spec, goal_spec):
+    spec = -1*np.multiply((norm_spec+1), goal_spec)/(norm_spec-1) 
+    return spec
 
 def rollout(agent, env_name, num_steps, out=None, no_render=True):
     if hasattr(agent, "local_evaluator"):
         #env = agent.local_evaluator.env
-        env_config = {"generalize":True,"num_valid":args.num_val_specs}
+        env_config = {"generalize":True,"num_valid":args.num_val_specs, "save_specs":False}
         if env_name == "opamp-v0":
-            env = TwoStageAmp(env_config)
+            env = TwoStageAmp(env_config=env_config)
         elif env_name == "opamp_full":
-            env = TwoStageFull(generalize=True, num_valid=args.num_val_specs)
+            env = TwoStageFull(env_config=env_config)
     else:
         env = gym.make(env_name)
 
+    #get unnormlaized specs
+    norm_spec_ref = env.global_g
+    spec_num = len(env.specs)
+     
     if hasattr(agent, "local_evaluator"):
         state_init = agent.local_evaluator.policy_map[
             "default"].get_initial_state()
@@ -136,8 +144,10 @@ def rollout(agent, env_name, num_steps, out=None, no_render=True):
     if out is not None:
         rollouts = []
         next_states = []
-        next_state_tot = []
+        obs_reached = []
+        obs_nreached = []
     rollout_steps = 0
+    reached_spec = 0
     while rollout_steps < args.num_val_specs:
         if out is not None:
             rollout_num = []
@@ -160,14 +170,23 @@ def rollout(agent, env_name, num_steps, out=None, no_render=True):
                 next_states.append(next_state)
             steps += 1
             state = next_state
+        norm_ideal_spec = state[spec_num:spec_num+spec_num]
+        ideal_spec = unlookup(norm_ideal_spec, norm_spec_ref)
+        if done == True:
+            reached_spec += 1
+            obs_reached.append(ideal_spec)
+        else:
+            obs_nreached.append(ideal_spec)          #save unreached observation 
         if out is not None:
             rollouts.append(rollout_num)
-            next_state_tot.append(next_states)
         print("Episode reward", reward_total)
         rollout_steps+=1
+    print("Num specs reached: " + str(reached_spec) + "/" + str(args.num_val_specs))
+
     if out is not None:
         pickle.dump(rollouts, open(str(out)+'reward', "wb"))
-        pickle.dump(next_state_tot, open(str(out)+'ns',"wb"))
+        pickle.dump(obs_reached, open("obs_reached","wb"))
+        pickle.dump(obs_nreached, open("obs_nreached","wb"))
 
 if __name__ == "__main__":
     parser = create_parser()

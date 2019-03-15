@@ -17,6 +17,7 @@ import os
 from framework.wrapper.TwoStageClass import TwoStageClass
 import IPython
 import itertools
+import pickle
 
 #way of ordering the way a yaml file is read
 class OrderedDictYAMLLoader(yaml.Loader):
@@ -62,9 +63,10 @@ class TwoStageAmp(gym.Env):
     def __init__(self, env_config):
         #print("@@@@@@213123123@@@@@@@@@@@@@@@@@")
         multi_goal = env_config.get("multi_goal",False)
-        generalize = env_config.get("generalize",True)
+        generalize = env_config.get("generalize",False)
         num_valid = env_config.get("num_valid",50)
-        rinokeras_specs = env_config.get("rinokeras_specs",True)
+        rinokeras_specs = env_config.get("rinokeras_specs",False)
+        specs_save = env_config.get("save_specs", False)
 
         self.env_steps = 0
         with open(TwoStageAmp.CIR_YAML, 'r') as f:
@@ -72,6 +74,7 @@ class TwoStageAmp(gym.Env):
 
         self.multi_goal = False #multi_goal
         self.generalize = generalize
+        self.save_specs = specs_save
 
         # design specs
         if generalize == False:
@@ -93,7 +96,7 @@ class TwoStageAmp(gym.Env):
                     if isinstance(spec[0],int):
                         list_val = [random.randint(int(spec[0]),int(spec[1])) for x in range(0,num_valid)]
                     else:
-                        list_val = [random.uniform(spec[0],spec[1]) for x in range(0,num_valid)]
+                        list_val = [random.uniform(float(spec[0]),float(spec[1])) for x in range(0,num_valid)]
                     specs_valid.append(tuple(list_val))
                 i=0
                 for key,value in specs_range.items():
@@ -108,8 +111,12 @@ class TwoStageAmp(gym.Env):
                 for key,value in specs.items():
                     specs[key] = specs_val[i]
                     i+=1
-
+        
         self.specs = OrderedDict(sorted(specs.items(), key=lambda k: k[0]))
+        if specs_save:
+            print(self.specs)
+            with open("specs_"+str(num_valid)+str(random.randint(1,100000)), 'wb') as f:
+                pickle.dump(self.specs, f)
         self.specs_ideal = []
         self.specs_id = list(self.specs.keys())
         self.fixed_goal_idx = -1
@@ -147,12 +154,11 @@ class TwoStageAmp(gym.Env):
         self.global_g = []
         for spec in list(self.specs.values()):
                 self.global_g.append(float(spec[self.fixed_goal_idx]))
-        self.global_g = np.array(self.global_g)
-
+        self.g_star = np.array(self.global_g)
+        self.global_g = np.array(yaml_data['normalize'])
 
         #Initializing action space, works by creating all combos for each parameter
         self.action_arr = list(itertools.product(*([self.action_meaning for i in range(len(self.params_id))])))
-
 
         #objective number (used for validation)
         self.obj_idx = 0
@@ -164,13 +170,14 @@ class TwoStageAmp(gym.Env):
                 self.obj_idx = 0
             idx = self.obj_idx
             self.obj_idx += 1
+            #idx = random.randint(0,self.num_os-1)
             self.specs_ideal = []
             for spec in list(self.specs.values()):
                 self.specs_ideal.append(spec[idx])
             self.specs_ideal = np.array(self.specs_ideal)
         else:
             if self.multi_goal == False:
-                self.specs_ideal = self.global_g
+                self.specs_ideal = self.g_star 
             else:
                 idx = random.randint(0,self.num_os-1)
                 self.specs_ideal = []
@@ -229,7 +236,7 @@ class TwoStageAmp(gym.Env):
 
     def lookup(self, spec, goal_spec):
         goal_spec = [float(e) for e in goal_spec]
-        norm_spec = (spec-goal_spec)/goal_spec
+        norm_spec = (spec-goal_spec)/(goal_spec+spec)
         return norm_spec
 
     def mit_lookup(self, spec, goal_spec):
@@ -273,6 +280,7 @@ class TwoStageAmp(gym.Env):
         '''
 
         rel_specs = self.lookup(spec, goal_spec)
+        print(rel_specs)
         rewards = []
         for i,rel_spec in enumerate(rel_specs):
             if(self.specs_id[i] == 'ibias_max'):
@@ -296,7 +304,7 @@ class TwoStageAmp(gym.Env):
                 rel_spec = rel_spec*-1.0
             if rel_spec < 0:
                 reward += rel_spec
-        return reward if reward < -0.05 else 10+np.sum(rel_specs)
+        return reward if reward < -0.02 else 10 #+np.sum(rel_specs)
 
     def update(self, params_idx):
         """

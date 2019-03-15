@@ -1,17 +1,30 @@
 dsn_netlist: "netlist/two_stage_opamp.cir"
 num_process: 1
 
-target_specs:
-  gain_min: !!python/tuple [200, 300]
-  ugbw_min: !!python/tuple [1050000.0, 1000000.0]
-  phm_min:  !!python/tuple [60, 60]
-  ibias_max: !!python/tuple [0.0001, 0.0001]
+normalize: !!python/tuple [350, 0.001, 60, 950000.0]
 
+target_specs:
+   gain_min: !!python/tuple [350, 250, 373] #267.0] #, 350]
+   ugbw_min: !!python/tuple [950000.0, !!float 2.0e7, !!float 5.267e6] #!!float 2.306e7] #, 950000.0]
+   phm_min:  !!python/tuple [60, 60, 60] #60] #, 60]
+   ibias_max: !!python/tuple [0.001, 0.01, 2.75e-4] #0.01] #, 0.001]
+
+  #gain_min: !!python/tuple [250,350]
+  #ugbw_min: !!python/tuple [2.0e7, 950000.0]
+  #phm_min:  !!python/tuple [60, 60]
+  #ibias_max: !!python/tuple [0.0001, 0.001]
+
+#[477]
+#[3316448.67]
+#[62]
+#[0.007]
+
+#
 target_valid_specs:
-  gain_min: !!python/tuple [250, 350]
-  ugbw_min: !!python/tuple [950000.0, 950000.0]
-  phm_min:  !!python/tuple [60,60]
-  ibias_max: !!python/tuple [0.0001, 0.0001]
+  gain_min: !!python/tuple [200, 400] #[200, 500] #[250, 350]
+  ugbw_min: !!python/tuple [!!float 1.0e6, !!float 2.5e7] #[150000.0, 1000000.0] #[950000.0, 950000.0]
+  phm_min:  !!python/tuple [60, 60.000001]
+  ibias_max: !!python/tuple [0.0001, 0.01]
 
 params:
   mp1:  !!python/tuple [1, 100, 1]

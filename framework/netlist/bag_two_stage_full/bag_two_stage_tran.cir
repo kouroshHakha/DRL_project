@@ -94,7 +94,7 @@ run
 set units=degrees
 set wr_vecnames
 option numdgt=7
-wrdata tran.csv v(xdut.outp) v(xdut.inp) i(vsup)
+wrdata tran.csv v(vout) v(xdut.inp) i(vsup)
 .endc
 
 

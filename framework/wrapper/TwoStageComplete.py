@@ -7,7 +7,7 @@ import importlib
 import subprocess
 
 debug = False
-
+import IPython
 from framework.wrapper.ngspice_wrapper import NgSpiceWrapper
 
 
@@ -111,6 +111,27 @@ class TwoStageOpenLoop(NgSpiceWrapper):
             #     return xstart
             return xstop, False
 
+    def create_design_and_simulate(self, state, verbose=False):
+        if debug:
+            print('state', state)
+            print('verbose', verbose)
+        #dsn_name = self.get_design_name(state)
+        #base_dir = NgSpiceWrapper.BASE_TMP_DIR+'/designs_bag_two_stage_ol'
+        #sims = os.listdir(base_dir)
+        #found_design_flag = 0
+        #for sim in sims:
+        #    if dsn_name in sim:
+        #        design_folder = base_dir+'/'+sim
+        #        print("already simulated ol")
+        #        found_design_flag = 1
+        #        info = 0
+        #        break
+        #if found_design_flag == 0:
+        design_folder, fpath = self.create_design(state)
+        info = self.simulate(fpath)
+        specs = self.translate_result(design_folder)
+        return [(state, specs, info)]
+ 
 class TwoStageCommonModeGain(NgSpiceWrapper):
 
     def translate_result(self, output_path):
@@ -156,6 +177,27 @@ class TwoStageCommonModeGain(NgSpiceWrapper):
     def find_dc_gain (self, vout):
         return np.abs(vout)[0]
 
+    def create_design_and_simulate(self, state, verbose=False):
+        if debug:
+            print('state', state)
+            print('verbose', verbose)
+        #dsn_name = self.get_design_name(state)
+        #base_dir = NgSpiceWrapper.BASE_TMP_DIR+'/designs_bag_two_stage_cm'
+        #sims = os.listdir(base_dir)
+        #found_design_flag = 0
+        #for sim in sims:
+        #    if dsn_name in sim:
+        #        design_folder = base_dir+"/"+sim
+                #print("already simulated cm")
+        #        found_design_flag = 1
+        #        info = 0
+        #        break
+        #if found_design_flag == 0:
+        design_folder, fpath = self.create_design(state)
+        info = self.simulate(fpath)
+        specs = self.translate_result(design_folder)
+        return [(state, specs, info)]
+
 class TwoStagePowerSupplyGain(NgSpiceWrapper):
 
     def translate_result(self, output_path):
@@ -200,6 +242,27 @@ class TwoStagePowerSupplyGain(NgSpiceWrapper):
 
     def find_dc_gain (self, vout):
         return np.abs(vout)[0]
+
+    def create_design_and_simulate(self, state, verbose=False):
+        if debug:
+            print('state', state)
+            print('verbose', verbose)
+        #dsn_name = self.get_design_name(state)
+        #base_dir = NgSpiceWrapper.BASE_TMP_DIR+'/designs_bag_two_stage_ps'
+        #sims = os.listdir(base_dir)
+        #found_design_flag = 0
+        #for sim in sims:
+        #    if dsn_name in sim:
+        #        design_folder = base_dir+"/"+sim
+                #print("already simulated ps")
+        #        found_design_flag = 1
+        #        info = 0
+        #        break
+        #if found_design_flag == 0:
+        design_folder, fpath = self.create_design(state)
+        info = self.simulate(fpath)
+        specs = self.translate_result(design_folder)
+        return [(state, specs, info)]
 
 class TwoStageTransient(NgSpiceWrapper):
 
@@ -276,6 +339,27 @@ class TwoStageTransient(NgSpiceWrapper):
         t0 = t[last_idx]
         t1 = t[last_idx + 1]
         return sciopt.brentq(f, t0, t1)
+
+    def create_design_and_simulate(self, state, verbose=False):
+        if debug:
+            print('state', state)
+            print('verbose', verbose)
+        #dsn_name = self.get_design_name(state)
+        #base_dir = NgSpiceWrapper.BASE_TMP_DIR+'/designs_bag_two_stage_tran'
+        #sims = os.listdir(base_dir)
+        #found_design_flag = 0
+        #for sim in sims:
+        #    if dsn_name in sim:
+        #        design_folder = base_dir+"/"+sim
+                #print("already simulated tran")
+        #        found_design_flag = 1
+        #        info = 0
+        #        break
+        #if found_design_flag == 0:
+        design_folder, fpath = self.create_design(state)
+        info = self.simulate(fpath)
+        specs = self.translate_result(design_folder)
+        return [(state, specs, info)]
 
 class TwoStageMeasManager(object):
 

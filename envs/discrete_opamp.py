@@ -169,7 +169,7 @@ class TwoStageAmp(gym.Env):
     def reset(self):
         #if multi-goal is selected, every time reset occurs, it will select a different design spec as objective
         if self.generalize == True:
-            if self.valid = True:
+            if self.valid == True:
                 if self.obj_idx > self.num_os-1:
                     self.obj_idx = 0
                 idx = self.obj_idx

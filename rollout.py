@@ -18,6 +18,7 @@ from ray.tune.registry import register_env
 
 from envs.discrete_opamp import TwoStageAmp
 from envs.opamp_full_discrete import TwoStageAmp as TwoStageFull
+from envs.bag_opamp_discrete import TwoStageAmp as TwoStageBag
 
 EXAMPLE_USAGE = """
 Example Usage via RLlib CLI:
@@ -33,6 +34,7 @@ Example Usage via executable:
 # ModelCatalog.register_custom_model("pa_model", ParametricActionsModel)
 # register_env("pa_cartpole", lambda _: ParametricActionCartpole(10))
 register_env("opamp-v0", lambda config:TwoStageAmp(config))
+register_env("opampbag-v0", lambda config:TwoStageBag(config))
 
 def create_parser(parser_creator=None):
     parser_creator = parser_creator or argparse.ArgumentParser
@@ -97,7 +99,7 @@ def run(args, parser):
         with open(config_path) as f:
             config = json.load(f)
         if "num_workers" in config:
-            config["num_workers"] = min(2, config["num_workers"])
+            config["num_workers"] = 1#min(2, config["num_workers"])
 
     if not args.env:
         if not config.get("env"):
@@ -119,11 +121,13 @@ def unlookup(norm_spec, goal_spec):
 def rollout(agent, env_name, num_steps, out=None, no_render=True):
     if hasattr(agent, "local_evaluator"):
         #env = agent.local_evaluator.env
-        env_config = {"generalize":True,"num_valid":args.num_val_specs, "save_specs":False}
+        env_config = {"generalize":True,"num_valid":args.num_val_specs, "save_specs":False, "run_valid":True}
         if env_name == "opamp-v0":
             env = TwoStageAmp(env_config=env_config)
         elif env_name == "opamp_full":
             env = TwoStageFull(env_config=env_config)
+        elif env_name == "opampbag-v0":
+            env = TwoStageBag(env_config=env_config)
     else:
         env = gym.make(env_name)
 

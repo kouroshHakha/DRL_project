@@ -1,0 +1,42 @@
+.include "/home/suhong/DRL_project/framework/netlist/spice_models/45nm_bulk.txt"
+
+.param wp1=0.5u lp1=90n mp1=20
+.param wn1=0.5u ln1=90n mn1=10
+.param rfb = 1e3
+.param vdd = 1.0
+.param vcm = vdd/2
+
+*** Trans-Impedance Amplifier Netlist ***
+.subckt TIA vin_n vout_n vin_p vout_p vdd vss vincm
+mnmos_n vout_n vin_n vss vss nmos w=wn1 l=ln1 m=mn1
+mpmos_n vout_n vin_n vdd vdd pmos w=wp1 l=lp1 m=mp1
+mnmos_p vout_p vin_p vss vss nmos w=wn1 l=ln1 m=mn1
+mpmos_p vout_p vin_p vdd vdd pmos w=wp1 l=lp1 m=mp1
+rfb_n1 vin_n vincm rfb
+rfb_n2 vincm vout_n rfb
+rfb_p1 vin_p vincm rfb
+rfb_p2 vincm vout_p rfb
+.ends TIA
+
+*** Test bench ***
+vsup vdd vss DC=vdd
+vgnd vss 0 DC=0
+vin in 0 DC=0 AC=1
+ein1 vin_n cm in 0 -0.5
+ein2 vin_p cm in 0 0.5
+iin in2 0 DC=0 AC=1
+vcm cm 0 dc=vcm
+xdut in2 vout_n in2 vout_p vdd vss vincm TIA
+
+.ac dec 10 1k 2G
+.control
+run
+set units=degrees
+set wr_vecnames
+option numdgt=7
+wrdata ac2.csv v(vout_n)
+op
+wrdata dc2.csv i(vsup)
+.endc
+
+.end

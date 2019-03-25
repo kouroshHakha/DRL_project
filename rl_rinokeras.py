@@ -12,7 +12,7 @@ from tensorflow.keras.layers import Dense, Input
 from envs.opamp_discrete import TwoStageAmp
 from envs.opamp_full_discrete import TwoStageAmp as TwoStageAmpFull
 from envs.bag_opamp_discrete import TwoStageAmp as TwoStageAmpBag
-
+from envs.bag_TIA_discrete import TIA as TIA
 from rinokeras.rl.env_runners import PGEnvironmentRunner, BatchRollout
 from rinokeras.rl.policies import StandardPolicy, LSTMPolicy
 from rinokeras.rl.trainers import PolicyGradient, PPO
@@ -60,6 +60,9 @@ elif args.env == 'opamp_full':
 elif args.env == 'opamp_bag':
     env = TwoStageAmpBag(multi_goal=args.mobj,generalize=False)
     env_validation = TwoStageAmpBag(generalize=True)
+elif args.env == 'tia':
+    env = TIA(multi_goal=args.mobj,generalize=False)
+    env_validation = TIA(generalize=True)
 
 # initialize random seed
 np.random.seed(args.seed)
@@ -77,8 +80,8 @@ discrete = not isinstance(env.action_space, gym.spaces.Box)
 action_shape = (env.action_space.n,) if discrete else env.action_space.shape
 model_dim = 64                                      #Num neurons for each layer
 gamma = 0.95                                        #discount factor, dampen agent's choice of action
-n_rollouts_per_batch_validation = 52                #Number of rollouts used for validation 
-n_rollouts_per_batch_training = 20                  #Number of rollouts used for training
+n_rollouts_per_batch_validation = 1                #Number of rollouts used for validation 
+n_rollouts_per_batch_training = 1                  #Number of rollouts used for training
 max_ep_steps= 60                                    #Maximum number of steps in each trajectory 
 n_updates_per_batch = 1 if args.alg == 'vpg' else 3 #Efficient updates if you use PPO
 embedding_model = Dense(model_dim)                  #Can experiment with number of layers by going to rinokers.rl.policies

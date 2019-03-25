@@ -1,0 +1,53 @@
+TIA
+
+.include "/home/suhong/DRL_project/framework/netlist/spice_models/45nm_bulk.txt"
+
+.param wp1=0.5u lp1=45n mp1=16
+.param wn1=0.5u ln1=45n mn1=10
+.param rfb = 300
+.param vdd = 1.0
+.param vcm = vdd/2
+.param cload = 1e-12
+.param cpd = 50e-15
+
+*** Trans-Impedance Amplifier Netlist ***
+.subckt TIA vin_n vout_n vin_p vout_p vdd vss
+mnmos_n vout_n vin_n vss vss nmos w=wn1 l=ln1 m=mn1
+mpmos_n vout_n vin_n vdd vdd pmos w=wp1 l=lp1 m=mp1
+mnmos_p vout_p vin_p vss vss nmos w=wn1 l=ln1 m=mn1
+mpmos_p vout_p vin_p vdd vdd pmos w=wp1 l=lp1 m=mp1
+rfb_n1 vin_n vout_n rfb
+rfb_p1 vin_p vout_p rfb
+cload_p vout_p vss cload
+cload_n vout_n vss cload
+.ends TIA
+
+*** ideal_balun ***
+.subckt ideal_balun n p ac dc
+r1 p dc 1e9
+r2 dc n 1e9
+e1 ac 0 p n 1
+.ends ideal_balun
+
+*** AC Test bench ***
+vsup vdd vss DC=vdd
+vgnd vss 0 DC=0
+iin_n iin_n vss DC=0 AC=0.5
+cin_n iin_n vss cpd
+rin_n iin_n vss 1e17
+iin_p iin_p vss DC=0 AC=-0.5
+cin_p iin_p vss cpd
+rin_p iin_p vss 1e17
+x_out_balun vout_n vout_p voutdm voutcm ideal_balun
+xdut iin_n vout_n iin_p vout_p vdd vss TIA
+
+
+.noise v(voutdm) iin_n dec 10 1k 100k
+.control
+run
+set units=degrees
+set wr_vecnames
+option numdgt=7
+wrdata noise3.csv inoise
+.endc
+.end

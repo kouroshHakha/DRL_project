@@ -1,0 +1,50 @@
+TIA
+
+.include "/home/ksettaluri6/DRL_project/framework/netlist/spice_models/45nm_bulk.txt"
+
+.param nser=2
+.param npar=1
+.param wp1=1u 
+.param lp1=56n 
+.param mp1=16
+.param wn1=1u 
+.param ln1=56n 
+.param mn1=10
+.param rfb=11284 
+.param vdd=1.2
+.param vcm=vdd/2
+.param cload=5.0e-15 
+.param cpd=2.0e-14
+
+*** Trans-Impedance Amplifier Netlist ***
+.subckt TIA vin_n vout_n vin_p vout_p vdd vss
+mnmos_n vout_n vin_n vss vss nmos w=wn1 l=ln1 m=mn1
+mpmos_n vout_n vin_n vdd vdd pmos w=wp1 l=lp1 m=mp1
+mnmos_p vout_p vin_p vss vss nmos w=wn1 l=ln1 m=mn1
+mpmos_p vout_p vin_p vdd vdd pmos w=wp1 l=lp1 m=mp1
+rfb_n1 vin_n vout_n rfb
+rfb_p1 vin_p vout_p rfb
+cload_p vout_p vss cload
+cload_n vout_n vss cload
+.ends TIA
+
+*** AC Test bench ***
+vsup vdd vss DC=vdd
+vgnd vss 0 DC=0
+cin_n iin_n vss cpd
+cin_p iin_p vss cpd
+icur iin_p iin_n DC=0 AC=1
+xdut iin_n vout_n iin_p vout_p vdd vss TIA
+
+.ac dec 100 1k 1000G
+.control
+run
+set units=degrees
+set wr_vecnames
+option numdgt=7
+wrdata ac.csv v(vout_p) v(vout_n)
+op
+wrdata dc.csv i(vsup)
+.endc
+
+.end

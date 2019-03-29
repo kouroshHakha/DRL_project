@@ -2,7 +2,10 @@ import ray
 import ray.tune as tune
 from ray.rllib.agents import ppo
 from ray.rllib.contrib.random_agent.random_agent import RandomAgent
-from envs.discrete_opamp import TwoStageAmp
+#from envs.discrete_opamp import TwoStageAmp
+#from envs.bag_opamp_discrete import TwoStageAmp
+from envs.bag_tia_discrete import TIA
+
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--checkpoint_dir', '-cpd', type=str)
@@ -21,21 +24,21 @@ config_validation = {
             "num_gpus": 0,
             "model":{"fcnet_hiddens": [64, 64]},
             "num_workers": 1,
-            "env_config":{"generalize":False, "save_specs":False},
+            "env_config":{"generalize":False, "save_specs":False, "run_valid":True},
             }
 
 config_train = {
             "sample_batch_size": 200,
             "train_batch_size": 1200,
             "sgd_minibatch_size": 1200,
-            "num_sgd_iter":3,
+            "num_sgd_iter": 3,
             "lr":1e-3,
-            "vf_loss_coeff":0.5,
+            "vf_loss_coeff": 0.5,
             "horizon":  60,
             "num_gpus": 0,
             "model":{"fcnet_hiddens": [64, 64]},
-            "num_workers": 1,
-            "env_config":{"generalize":True, "save_specs":True},
+            "num_workers": 6,
+            "env_config":{"generalize":False, "save_specs":False},
             }
 
 if not args.checkpoint_dir:
@@ -43,9 +46,9 @@ if not args.checkpoint_dir:
         "train_ppo": {
         "checkpoint_freq":2,
         "run": "PPO",
-        "env": TwoStageAmp,
+        "env": TIA,
 #        "stop": {"training_iteration": 3, "episode_reward_max": -0.02},
-        "stop": {"episode_reward_max": -0.02},
+        "stop": {"episode_reward_mean": -0.02},
         "config": config_train},
     })
 else:

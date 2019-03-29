@@ -59,7 +59,11 @@ class TwoStageAmp(gym.Env):
     framework_path = os.path.abspath(framework.__file__).split("__")
     CIR_YAML = framework_path[0]+"/yaml_files/two_stage_full.yaml"
 
-    def __init__(self, multi_goal=False, generalize=False, num_valid=10):
+    #def __init__(self, multi_goal=False, generalize=False, num_valid=10):
+    def __init__(self, env_config):
+        multi_goal = env_config.get("multi_goal",False)
+        generalize = env_config.get("generalize",False)
+        num_valid = env_config.get("num_valid",10)
 
         with open(TwoStageAmp.CIR_YAML, 'r') as f:
             yaml_data = yaml.load(f, OrderedDictYAMLLoader)
@@ -122,7 +126,7 @@ class TwoStageAmp(gym.Env):
         self.ps_env = TwoStagePowerSupplyGain(design_netlist=ps_dsn_netlist)
         self.tran_env = TwoStageTransient(design_netlist=tran_dsn_netlist)
         
-        self.action_meaning = [-1,0,4]
+        self.action_meaning = [-1,0,2]
         self.action_space = spaces.Discrete(len(self.action_meaning)**len(self.params_id))
         self.observation_space = spaces.Box(
             low=np.array([TwoStageAmp.PERF_LOW]*2*len(self.specs_id)+len(self.params_id)*[1]),
@@ -143,6 +147,7 @@ class TwoStageAmp(gym.Env):
         
         #objective number (used for validation)
         self.obj_idx = 0
+        #print("self.global_g: {}".format(self.global_g))
 
     def reset(self):
         #if multi-goal is selected, every time reset occurs, it will select a different design spec as objective
@@ -179,6 +184,8 @@ class TwoStageAmp(gym.Env):
 
         #observation is a combination of current specs distance from ideal, ideal spec, and current param vals
         self.ob = np.concatenate([cur_spec_norm, self.specs_ideal_norm, self.cur_params_idx])
+        #print("self.specs_ideal: {}".format(self.specs_ideal))
+        #print("self.global_g: {}".format(self.global_g))
         return self.ob
  
     def step(self, action):
@@ -194,7 +201,6 @@ class TwoStageAmp(gym.Env):
         cur_spec_norm  = self.lookup(self.cur_specs, self.global_g)
         reward = self.reward(self.cur_specs, self.specs_ideal)
         done = False
-
         #incentivize reaching goal state
         if (reward >= 10):
             done = True
@@ -212,7 +218,7 @@ class TwoStageAmp(gym.Env):
         norm_spec = (spec-goal_spec)/goal_spec
         return norm_spec
     
-    def reward(self, spec, goal_spec):
+    def orig_reward(self, spec, goal_spec):
         '''
         Reward: doesn't penalize for overshooting spec, is negative
         '''
@@ -226,7 +232,30 @@ class TwoStageAmp(gym.Env):
                 rel_spec = rel_spec/10
             if rel_spec < 0:
                 reward += rel_spec
-        return reward if reward < -0.01 else 10+np.sum(rel_specs)
+            #print('rel_spec:', rel_spec)
+            #print('re:', reward)
+        return reward if reward < -0.05 else 10+np.sum(rel_specs)
+
+    def reward(self, spec, goal_spec):
+        '''
+        Reward: doesn't penalize for overshooting spec, is negative
+        '''
+
+        rel_specs = self.lookup(spec, goal_spec)
+        rewards = []
+        for i,rel_spec in enumerate(rel_specs):
+            #if(self.specs_id[i] == 'ibias_max'):
+            if (self.specs_id[i] == 'offset_sys_max') or (self.specs_id[i] == 'tset_max') or (self.specs_id[i] == 'bias_max'):
+                rel_spec = rel_spec*-1.0
+            if self.specs_id[i] == 'bias_max':
+                rel_spec = rel_spec/10
+            if rel_spec < 0:
+                rewards.append(-rel_spec)
+            else:
+                rewards.append(0)
+
+        reward = -np.linalg.norm(rewards)
+        return reward if reward < -0.05 else 10+np.sum(rel_specs)
 
     def update(self, params_idx):
         """

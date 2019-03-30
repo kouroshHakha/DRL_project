@@ -1,0 +1,50 @@
+Traceback (most recent call last):
+  File "/anaconda3/lib/python3.6/site-packages/ray/tune/trial_runner.py", line 378, in _process_events
+    result = self.trial_executor.fetch_result(trial)
+  File "/anaconda3/lib/python3.6/site-packages/ray/tune/ray_trial_executor.py", line 228, in fetch_result
+    result = ray.get(trial_future[0])
+  File "/anaconda3/lib/python3.6/site-packages/ray/worker.py", line 2211, in get
+    raise value
+ray.worker.RayTaskError: [36mray_worker[39m (pid=95347, host=C02X23C1JHD3)
+  File "/anaconda3/lib/python3.6/site-packages/ray/rllib/agents/agent.py", line 274, in train
+    result = Trainable.train(self)
+  File "/anaconda3/lib/python3.6/site-packages/ray/tune/trainable.py", line 151, in train
+    result = self._train()
+  File "/anaconda3/lib/python3.6/site-packages/ray/rllib/agents/ppo/ppo.py", line 101, in _train
+    fetches = self.optimizer.step()
+  File "/anaconda3/lib/python3.6/site-packages/ray/rllib/optimizers/multi_gpu_optimizer.py", line 125, in step
+    self.num_envs_per_worker, self.train_batch_size)
+  File "/anaconda3/lib/python3.6/site-packages/ray/rllib/optimizers/rollout.py", line 28, in collect_samples
+    next_sample = ray.get(fut_sample)
+ray.worker.RayTaskError: [36mray_worker[39m (pid=95350, host=C02X23C1JHD3)
+  File "/anaconda3/lib/python3.6/site-packages/ray/rllib/evaluation/policy_evaluator.py", line 363, in sample
+    batches = [self.input_reader.next()]
+  File "/anaconda3/lib/python3.6/site-packages/ray/rllib/offline/input_reader.py", line 28, in next
+    batches = [self.sampler.get_data()]
+  File "/anaconda3/lib/python3.6/site-packages/ray/rllib/evaluation/sampler.py", line 64, in get_data
+    item = next(self.rollout_provider)
+  File "/anaconda3/lib/python3.6/site-packages/ray/rllib/evaluation/sampler.py", line 282, in _env_runner
+    async_vector_env.send_actions(actions_to_send)
+  File "/anaconda3/lib/python3.6/site-packages/ray/rllib/env/async_vector_env.py", line 248, in send_actions
+    self.vector_env.vector_step(action_vector)
+  File "/anaconda3/lib/python3.6/site-packages/ray/rllib/env/vector_env.py", line 89, in vector_step
+    obs, rew, done, info = self.envs[i].step(actions[i])
+  File "/Users/ameerh/autobag/DRL_project/envs/bag_opamp_discrete.py", line 211, in step
+    self.cur_specs = self.update(self.cur_params_idx)
+  File "/Users/ameerh/autobag/DRL_project/envs/bag_opamp_discrete.py", line 258, in update
+    cur_specs = OrderedDict(sorted(self.sim_env.create_design_and_simulate(param_val, verbose=True)[0][1].items(), key=lambda k:k[0]))
+  File "/Users/ameerh/autobag/DRL_project/framework/wrapper/ngspice_wrapper.py", line 92, in create_design_and_simulate
+    specs = self.translate_result(design_folder)
+  File "/Users/ameerh/autobag/DRL_project/framework/wrapper/TwoStageClass.py", line 32, in translate_result
+    freq, vout,  ibias = self.parse_output(output_path)
+  File "/Users/ameerh/autobag/DRL_project/framework/wrapper/TwoStageClass.py", line 53, in parse_output
+    ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
+  File "/anaconda3/lib/python3.6/site-packages/numpy/lib/npyio.py", line 1689, in genfromtxt
+    fhd = iter(np.lib._datasource.open(fname, 'rt', encoding=encoding))
+  File "/anaconda3/lib/python3.6/site-packages/numpy/lib/_datasource.py", line 260, in open
+    return ds.open(path, mode, encoding=encoding, newline=newline)
+  File "/anaconda3/lib/python3.6/site-packages/numpy/lib/_datasource.py", line 616, in open
+    raise IOError("%s not found." % path)
+OSError: /tmp/ameerh/circuit_drl95350/designs_bag_two_stage_opamp/_45_17_53_33_47_71_732759/ac.csv not found.
+
+

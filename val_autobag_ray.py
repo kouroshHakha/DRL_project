@@ -28,27 +28,27 @@ config_validation = {
             }
 
 config_train = {
-            "sample_batch_size": 200,
-            "train_batch_size": 1200,
-            "sgd_minibatch_size": 1200,
+            "sample_batch_size": 20,
+            "train_batch_size": 120,
+            "sgd_minibatch_size": 120,
             "num_sgd_iter": 3,
             "lr":1e-3,
             "vf_loss_coeff": 0.5,
-            "horizon":  60,
+            "horizon":  20,
             "num_gpus": 0,
             "model":{"fcnet_hiddens": [64, 64]},
             "num_workers": 6,
-            "env_config":{"generalize":False, "save_specs":False},
+            "env_config":{"generalize":True, "save_specs":True},
             }
 
 if not args.checkpoint_dir:
     trials = tune.run_experiments({
         "train_ppo": {
-        "checkpoint_freq":2,
+        "checkpoint_freq":1,
         "run": "PPO",
         "env": TIA,
 #        "stop": {"training_iteration": 3, "episode_reward_max": -0.02},
-        "stop": {"episode_reward_mean": -0.02},
+        "stop": {"episode_reward_mean": 0.0},
         "config": config_train},
     })
 else:

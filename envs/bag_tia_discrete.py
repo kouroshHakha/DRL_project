@@ -97,13 +97,12 @@ class TIA(gym.Env):
             specs_train = yaml_data['target_specs']
             specs_val = []
             for i,valid_arr in enumerate(list(specs_range.values())):
-                specs_val.append(valid_arr+list(specs_train.values())[i])
+                specs_val.append(valid_arr) #+list(specs_train.values())[i])
             specs = specs_train
             i = 0
             for key,value in specs.items():
                 specs[key] = specs_val[i]
                 i+=1
-        
         self.r_unit = yaml_data['r_unit']
         self.specs = OrderedDict(sorted(specs.items(), key=lambda k: k[0]))
         if specs_save:
@@ -129,11 +128,9 @@ class TIA(gym.Env):
         #observation space only used to get how many there are for RL algorithm, actual range doesnt matter
         ol_dsn_netlist = TIA.framework_path[0] + yaml_data['ol_dsn_netlist']
         tran_dsn_netlist = TIA.framework_path[0] + yaml_data['tran_dsn_netlist']
-        noise_dsn_netlist = TIA.framework_path[0] + yaml_data['noise_dsn_netlist']
 
         self.ol_sim_env = TIAOpenLoop(design_netlist=ol_dsn_netlist)
         self.tran_sim_env = TIATransient(design_netlist=tran_dsn_netlist)
-        self.noise_sim_env = TIANoise(design_netlist=noise_dsn_netlist)
 
         self.action_meaning = [-1,0,2]
         self.action_space = spaces.Tuple([spaces.Discrete(len(self.action_meaning))]*len(self.params_id))
@@ -154,6 +151,7 @@ class TIA(gym.Env):
 
         #objective number (used for validation)
         self.obj_idx = 0
+        self.steps = 0
 
     def reset(self):
         #if multi-goal is selected, every time reset occurs, it will select a different design spec as objective
@@ -193,6 +191,8 @@ class TIA(gym.Env):
 
         #count num of env steps
         self.env_steps = self.env_steps + 1
+
+        print(self.specs_ideal)
         return self.ob
 
     def step(self, action):
@@ -200,7 +200,8 @@ class TIA(gym.Env):
         :param action: is vector with elements between 0 and 1 mapped to the index of the corresponding parameter
         :return:
         """
-
+        self.steps += 1
+        print('Steps:'+str(self.steps))
         #Take action that RL agent returns to change current params
         action = list(np.reshape(np.array(action),(np.array(action).shape[0],)))
         self.cur_params_idx = self.cur_params_idx + np.array([self.action_meaning[a] for a in action])
@@ -212,7 +213,7 @@ class TIA(gym.Env):
         cur_spec_norm  = self.lookup(self.cur_specs, self.global_g)
         reward = self.reward(self.cur_specs, self.specs_ideal)
         done = False
-
+        
         #incentivize reaching goal state
         if (reward >= 10):
             done = True
@@ -224,6 +225,8 @@ class TIA(gym.Env):
             print('-'*10)
 
         self.ob = np.concatenate([cur_spec_norm, self.specs_ideal_norm, self.cur_params_idx])
+        print('cur specs:'+str(self.cur_specs))
+        print('ideal specs:'+str(self.specs_ideal))
         self.env_steps = self.env_steps + 1
         return self.ob, reward, done, {}
 
@@ -243,7 +246,6 @@ class TIA(gym.Env):
         '''
 
         rel_specs = self.lookup(spec, goal_spec)
-        print(rel_specs)
         rewards = []
         for i,rel_spec in enumerate(rel_specs):
             if(self.specs_id[i] == 'ibias_max'):
@@ -281,9 +283,8 @@ class TIA(gym.Env):
         rfb = params[0]*self.r_unit
         param_val[0].update({'rfb':rfb})
 
-        ol_results = self.ol_sim_env.create_design_and_simulate(param_val, verbose=True)
-        tran_results = self.tran_sim_env.create_design_and_simulate(param_val, verbose=True)
-        noise_results = self.noise_sim_env.create_design_and_simulate(param_val, verbose=True)
+        ol_results = self.ol_sim_env.create_design_and_simulate(param_val, verbose=False)
+        tran_results = self.tran_sim_env.create_design_and_simulate(param_val, verbose=False)
 
         #tran results
         tset = self.tran_sim_env.get_tset(tran_results, ol_results, plt=False, tot_err=0.1)

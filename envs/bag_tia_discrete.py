@@ -66,7 +66,7 @@ class TIA(gym.Env):
         num_valid = env_config.get("num_valid",50)
         specs_save = env_config.get("save_specs", False)
         valid = env_config.get("run_valid", False)
-
+        
         self.env_steps = 0
         with open(TIA.CIR_YAML, 'r') as f:
             yaml_data = yaml.load(f, OrderedDictYAMLLoader)
@@ -80,29 +80,8 @@ class TIA(gym.Env):
         if generalize == False:
             specs = yaml_data['target_specs']
         else:
-            specs_range = yaml_data['target_valid_specs']
-            specs_range_vals = list(specs_range.values())
-            specs_valid = []
-            #random.seed(2992)
-            for spec in specs_range_vals:
-                if isinstance(spec[0],int):
-                    list_val = [random.randint(int(spec[0]),int(spec[1])) for x in range(0,num_valid)]
-                else:
-                    list_val = [random.uniform(float(spec[0]),float(spec[1])) for x in range(0,num_valid)]
-                specs_valid.append(tuple(list_val))
-            i=0
-            for key,value in specs_range.items():
-                specs_range[key] = specs_valid[i]
-                i+=1
-            specs_train = yaml_data['target_specs']
-            specs_val = []
-            for i,valid_arr in enumerate(list(specs_range.values())):
-                specs_val.append(valid_arr) #+list(specs_train.values())[i])
-            specs = specs_train
-            i = 0
-            for key,value in specs.items():
-                specs[key] = specs_val[i]
-                i+=1
+            specs = np.load('tiaspecs.npy')
+
         self.r_unit = yaml_data['r_unit']
         self.specs = OrderedDict(sorted(specs.items(), key=lambda k: k[0]))
         if specs_save:
@@ -205,9 +184,9 @@ class TIA(gym.Env):
         #Take action that RL agent returns to change current params
         action = list(np.reshape(np.array(action),(np.array(action).shape[0],)))
         self.cur_params_idx = self.cur_params_idx + np.array([self.action_meaning[a] for a in action])
-
         self.cur_params_idx = np.clip(self.cur_params_idx, [0]*len(self.params_id), [(len(param_vec)-1) for param_vec in self.params])
 
+        print(self.cur_params_idx)
         #Get current specs and normalize
         self.cur_specs = self.update(self.cur_params_idx)
         cur_spec_norm  = self.lookup(self.cur_specs, self.global_g)

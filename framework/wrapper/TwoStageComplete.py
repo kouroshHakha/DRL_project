@@ -294,7 +294,7 @@ class TwoStageTransient(NgSpiceWrapper):
 
         if not("26" in output):
             tran_fname = os.path.join(output_path, 'tran.csv')
-            tran_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)
+            tran_raw_outputs = np.genfromtxt(tran_fname, skip_header=1)
         else: 
             tran_fname = os.path.join(output_path, 'tran.csv.data')
             tran_raw_outputs = np.genfromtxt(tran_fname, skip_header=0)

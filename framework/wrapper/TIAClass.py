@@ -165,9 +165,9 @@ class TIATransient(NgSpiceWrapper):
         return sciopt.brentq(f, t0, t1)
 
     def create_design_and_simulate(self, state, verbose=False):
-        if debug:
-            print('state', state)
-            print('verbose', verbose)
+        #if debug:
+        #    print('state', state)
+        #    print('verbose', verbose)
         design_folder, fpath = self.create_design(state)
         info = self.simulate(fpath)
         specs = self.translate_result(design_folder)
@@ -221,20 +221,51 @@ if __name__ == '__main__':
     tran_env = TIATransient(design_netlist=tran_dsn_netlist)
     noise_env = TIANoise(design_netlist=noise_dsn_netlist)
 
-    # example of running it for one example point and getting back the data
-    state_list = [{'mp1': 16,
-                   'mn1': 10,
-                   'rfb': 22568,
-                   }]
+    #comprehensive list of range of specs
+    nsers = [2,4,6,8]
+    npars = 1
+    wp1s = np.array([2.0,4.0,6.0,8.0])*1.0e-6
+    wn1s = np.array([2.0,4.0,6.0,8.0])*1.0e-6
+    mp1s = [2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0]
+    mn1s = [2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0]
 
-    ol_results = ol_env.create_design_and_simulate(state_list, verbose=True)
-    tran_results = tran_env.create_design_and_simulate(state_list, verbose=True)
-    noise_results = noise_env.create_design_and_simulate(state_list, verbose=True)
+    r_unit = 5642
+    min_gain = 1000000 
+    max_gain = 0
+    min_f3db = 1000000000
+    max_f3db = 0
+    min_cur = 10000
+    max_cur = 0
+    for nser in nsers:
+        for wp1 in wp1s:
+            for wn1 in wn1s:
+                for mp1 in mp1s:
+                    for mn1 in mn1s:
+                        # example of running it for one example point and getting back the data
+                        rfb = nser*r_unit
+                        state_list = [{'mp1': mp1,
+                                       'mn1': mn1,
+                                       'rfb': rfb,
+                                       'wn1': wn1,
+                                       'wp1': wp1,
+                                       }]
 
-    gain = ol_results[0][1]['gain']
-    t = tran_results[0][1]['time']
-    vout = tran_results[0][1]['vout']
-    iin = tran_results[0][1]['iin']
-    #tset = tran_env.get_tset(t, vout, iin, tot_err=0.1, gain=gain, plt=False)
-    IPython.embed()
-    tset = tran_env.get_tset(tran_results, ol_results, plt=False, tot_err=0.1)
+                        ol_results = ol_env.create_design_and_simulate(state_list, verbose=True)
+                        tran_results = tran_env.create_design_and_simulate(state_list, verbose=True)
+
+                        tset = tran_env.get_tset(tran_results, ol_results, plt=False, tot_err=0.1)
+                        gain = ol_results[0][1]['gain']/2
+                        f3db = ol_results[0][1]['f3db']
+                        if gain > max_gain:
+                            max_gain = gain
+                        elif gain < min_gain:
+                            min_gain = gain
+                        if f3db > max_f3db:
+                            max_f3db = f3db
+                        elif f3db < min_f3db:
+                            min_f3db = f3db
+                        a = np.array((min_gain,max_gain,min_f3db,max_f3db,min_cur,max_cur))
+                        print('gain max: '+str(gain))
+                        print('bw max: '+str(f3db))
+                        print('tset max: '+str(tset)) 
+                        np.save('sweep_metrics.npy',a)

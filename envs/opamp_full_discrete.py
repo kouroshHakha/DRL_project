@@ -215,10 +215,21 @@ class TwoStageAmp(gym.Env):
         return self.ob, reward, done, {} 
 
     def lookup(self, spec, goal_spec):
-        norm_spec = (spec-goal_spec)/goal_spec
+        goal_spec = [float(e) for e in goal_spec]
+        norm_spec = (spec-goal_spec)/(goal_spec+spec)
         return norm_spec
     
-    def orig_reward(self, spec, goal_spec):
+    def jenny_rew_lookup(self, spec, goal_spec):
+        goal_spec = [float(e) for e in goal_spec]
+        norm_spec = (spec-goal_spec)/(goal_spec)
+        return norm_spec
+
+    def unlookup(norm_spec, goal_spec):
+        spec = -1*np.multiply((norm_spec+1), goal_spec)/(norm_spec-1) 
+        return spec
+
+    
+    def reward(self, spec, goal_spec):
         '''
         Reward: doesn't penalize for overshooting spec, is negative
         '''
@@ -236,7 +247,7 @@ class TwoStageAmp(gym.Env):
             #print('re:', reward)
         return reward if reward < -0.05 else 10+np.sum(rel_specs)
 
-    def reward(self, spec, goal_spec):
+    def jenny_reward(self, spec, goal_spec):
         '''
         Reward: doesn't penalize for overshooting spec, is negative
         '''

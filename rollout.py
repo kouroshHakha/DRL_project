@@ -19,7 +19,7 @@ from ray.tune.registry import register_env
 from envs.discrete_opamp import TwoStageAmp
 from envs.opamp_full_discrete import TwoStageAmp as TwoStageFull
 from envs.bag_opamp_discrete import TwoStageAmp as TwoStageBag
-
+from envs.bag_tia_discrete import TIA
 EXAMPLE_USAGE = """
 Example Usage via RLlib CLI:
     rllib rollout /tmp/ray/checkpoint_dir/checkpoint-0 --run DQN
@@ -35,6 +35,7 @@ Example Usage via executable:
 # register_env("pa_cartpole", lambda _: ParametricActionCartpole(10))
 register_env("opamp-v0", lambda config:TwoStageAmp(config))
 register_env("opampbag-v0", lambda config:TwoStageBag(config))
+register_env("tia-v0", lambda config:TIA(config))
 
 def create_parser(parser_creator=None):
     parser_creator = parser_creator or argparse.ArgumentParser
@@ -128,6 +129,8 @@ def rollout(agent, env_name, num_steps, out=None, no_render=True):
             env = TwoStageFull(env_config=env_config)
         elif env_name == "opampbag-v0":
             env = TwoStageBag(env_config=env_config)
+        elif env_name == 'tia-v0':
+            env = TIA(env_config=env_config)
     else:
         env = gym.make(env_name)
 
@@ -185,13 +188,14 @@ def rollout(agent, env_name, num_steps, out=None, no_render=True):
             rollouts.append(rollout_num)
         print("Episode reward", reward_total)
         rollout_steps+=1
+        if out is not None:
+            pickle.dump(rollouts, open(str(out)+'reward', "wb"))
+            pickle.dump(obs_reached, open("tia_obs_reached","wb"))
+            pickle.dump(obs_nreached, open("tia_obs_nreached","wb"))
+
     print("Num specs reached: " + str(reached_spec) + "/" + str(args.num_val_specs))
 
-    if out is not None:
-        pickle.dump(rollouts, open(str(out)+'reward', "wb"))
-        pickle.dump(obs_reached, open("obs_reached","wb"))
-        pickle.dump(obs_nreached, open("obs_nreached","wb"))
-
+    
 if __name__ == "__main__":
     parser = create_parser()
     args = parser.parse_args()

@@ -63,13 +63,17 @@ class TwoStageAmp(gym.Env):
     def __init__(self, env_config):
         multi_goal = env_config.get("multi_goal",False)
         generalize = env_config.get("generalize",False)
-        num_valid = env_config.get("num_valid",10)
+        num_valid = env_config.get("num_valid",50)
+        specs_save = env_config.get("save_specs", False)
+        valid = env_config.get("run_valid", False)
 
         with open(TwoStageAmp.CIR_YAML, 'r') as f:
             yaml_data = yaml.load(f, OrderedDictYAMLLoader)
 
         self.multi_goal = multi_goal
         self.generalize = generalize
+        self.save_specs = specs_save
+        self.valid = valid
 
         # design specs
         if generalize == False:
@@ -139,7 +143,8 @@ class TwoStageAmp(gym.Env):
         self.global_g = []
         for spec in list(self.specs.values()):
                 self.global_g.append(float(spec[self.fixed_goal_idx]))
-        self.global_g = np.array(self.global_g)
+        self.g_star = np.array(self.global_g)
+        self.global_g = np.array(yaml_data['normalize'])
 
         #Initializing action space, works by creating all combos for each parameter
         self.action_arr = list(itertools.product(*([self.action_meaning for i in range(len(self.params_id))])))
@@ -152,10 +157,13 @@ class TwoStageAmp(gym.Env):
     def reset(self):
         #if multi-goal is selected, every time reset occurs, it will select a different design spec as objective
         if self.generalize == True:
-            if self.obj_idx > self.num_os-1:
-                self.obj_idx = 0
-            idx = self.obj_idx
-            self.obj_idx += 1
+            if self.valid == True:
+                if self.obj_idx > self.num_os-1:
+                    self.obj_idx = 0
+                idx = self.obj_idx
+                self.obj_idx += 1
+            else:
+                idx = random.randint(0,self.num_os-1)
             self.specs_ideal = []
             for spec in list(self.specs.values()):
                 self.specs_ideal.append(spec[idx])
@@ -177,7 +185,7 @@ class TwoStageAmp(gym.Env):
         self.specs_ideal_norm = self.lookup(self.specs_ideal, self.global_g)
 
         #initialize current parameters
-        self.cur_params_idx = np.array([20, 20, 20, 20, 20, 20, 1])
+        self.cur_params_idx = np.array([33, 33, 33, 33, 33, 33, 33])
         self.cur_specs = self.update(self.cur_params_idx)
         cur_spec_norm = self.lookup(self.cur_specs, self.global_g)
         reward = self.reward(self.cur_specs, self.specs_ideal)

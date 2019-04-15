@@ -7,27 +7,27 @@ num_process: 1
 wrapper_name: "TwoStageComplete"
 target_specs:
   gain_min: !!python/tuple [150, 300]
-  ugbw_min: !!python/tuple [10000000.0, 10000000.0]
+  ugbw_min: !!python/tuple [10000000.0, !!float 10.0e6]
   phm_min:  !!python/tuple [60,60]
-  tset_max: !!python/tuple [90.0e-9,90.0e-9]
+  tset_max: !!python/tuple [90.0e-9, !!float 90.0e-9]
   feedback_factor: !!python/tuple [1.0,1.0]
   tot_err:  !!python/tuple [0.01, 0.01]
   psrr_min: !!python/tuple [50,50] #db
   cmrr_min: !!python/tuple [50,50] #db
-  offset_sys_max: !!python/tuple [1.0e-6,1.0e-3] #1 mv as the systematic offset
+  offset_sys_max: !!python/tuple [1.0e-6, !!float 1.0e-3] #1 mv as the systematic offset
   bias_max: !!python/tuple [10.0e-3,0.2e-3]
 
 target_valid_specs:
   gain_min: !!python/tuple [200,400] 
   ugbw_min: !!python/tuple [1000000.0,10000000.0]
-  phm_min: !!python/tuple [60,61] 
-  tset_max: !!python/tuple [50.0e-7, 100.0e-9]
-  feedback_factor: !!python/tuple [1.0,1.0001]
+  phm_min: !!python/tuple [60,60.000001] 
+  tset_max: !!python/tuple [!!float 50.0e-7, !!float 100.0e-9]
+  feedback_factor: !!python/tuple [1.0,1.000001]
   tot_err:  !!python/tuple [0.01,0.03]
   psrr_min: !!python/tuple [30,60] #db
   cmrr_min: !!python/tuple [30,60] #db
-  offset_sys_max: !!python/tuple [1.0e-5,1.0e-3] #1 mv as the systematic offset
-  bias_max: !!python/tuple [10.0e-3,10.0e-2]
+  offset_sys_max: !!python/tuple [!!float 1.0e-4, !!float 1.0e-2] #1 mv as the systematic offset
+  bias_max: !!python/tuple [!!float 10.0e-3, !!float 10.0e-1]
 
 params:
   mp1:  !!python/tuple [1, 100, 1]

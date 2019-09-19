@@ -100,7 +100,7 @@ def run(args, parser):
         with open(config_path) as f:
             config = json.load(f)
         if "num_workers" in config:
-            config["num_workers"] = 1#min(2, config["num_workers"])
+            config["num_workers"] = 0#min(2, config["num_workers"])
 
     if not args.env:
         if not config.get("env"):

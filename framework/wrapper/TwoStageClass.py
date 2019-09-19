@@ -47,7 +47,7 @@ class TwoStageClass(NgSpiceWrapper):
 
         output = str(subprocess.check_output("ngspice -v", shell=True))
 
-        if not("26" in output):
+        if "26" in output:
             ac_fname = os.path.join(output_path, 'ac.csv')
             dc_fname = os.path.join(output_path, 'dc.csv')
             ac_raw_outputs = np.genfromtxt(ac_fname, skip_header=1)

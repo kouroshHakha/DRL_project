@@ -81,15 +81,17 @@ class NgSpiceWrapper(object):
 
 
     def create_design_and_simulate(self, state, verbose=False):
-        if debug:
-            print('state', state)
-            print('verbose', verbose)
+        #if debug:
+        #    print('state', state)
+        #    print('verbose', verbose)
         dsn_name = self.get_design_name(state)
         #if verbose:
         #    print(dsn_name)
         design_folder, fpath = self.create_design(state)
         info = self.simulate(fpath)
         specs = self.translate_result(design_folder)
+        #add a line here to delete directory
+ 
         return [(state, specs, info)]
 
 

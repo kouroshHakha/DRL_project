@@ -2,9 +2,8 @@ import ray
 import ray.tune as tune
 from ray.rllib.agents import ppo
 from ray.rllib.contrib.random_agent.random_agent import RandomAgent
-#from envs.discrete_opamp import TwoStageAmp
-#from envs.bag_opamp_discrete import TwoStageAmp
-from envs.bag_tia_discrete import TIA
+from envs.discrete_opamp import TwoStageAmp
+import framework
 
 import argparse
 parser = argparse.ArgumentParser()
@@ -46,7 +45,7 @@ if not args.checkpoint_dir:
         "train_ppo": {
         "checkpoint_freq":1,
         "run": "PPO",
-        "env": TIA,
+        "env": TwoStageAmp,
 #        "stop": {"training_iteration": 3, "episode_reward_max": -0.02},
         "stop": {"episode_reward_mean": 0.0},
         "config": config_train},

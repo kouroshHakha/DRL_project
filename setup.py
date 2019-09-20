@@ -1,5 +1,6 @@
 # setup.py
 from setuptools import setup
 
-setup(name="Framework",
-      version="1.0")
+setup(name="framework",
+      version="1.0",
+)
